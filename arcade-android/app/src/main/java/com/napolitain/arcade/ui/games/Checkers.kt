@@ -1,6 +1,8 @@
 package com.napolitain.arcade.ui.games
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -19,11 +21,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -46,6 +52,7 @@ import com.napolitain.arcade.ui.components.GameMode
 import com.napolitain.arcade.ui.components.GameModeToggle
 import com.napolitain.arcade.ui.components.GameShell
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // Piece colors matching the React source
 private val BlackPieceFill = Color(0xFF0F172A)
@@ -85,15 +92,61 @@ fun CheckersGame() {
         engine.triggerAiMove()
     }
 
-    // Piece-drop animation keyed on lastMove token
-    val dropAnim = remember { Animatable(1f) }
+    // Slide animation for moved piece
+    val slideX = remember { Animatable(0f) }
+    val slideY = remember { Animatable(0f) }
     var lastToken by remember { mutableStateOf(0) }
+
+    // Capture poof animation
+    val poofProgress = remember { Animatable(0f) }
+    var poofIndices by remember { mutableStateOf(emptySet<Int>()) }
+
+    // King promotion bounce
+    val crownBounce = remember { Animatable(1f) }
+    var promotedIndex by remember { mutableIntStateOf(-1) }
+
+    // Track king counts for promotion detection
+    var prevBlackKings by remember { mutableIntStateOf(engine.blackKings) }
+    var prevRedKings by remember { mutableIntStateOf(engine.redKings) }
+
     LaunchedEffect(engine.lastMove?.token) {
-        val token = engine.lastMove?.token ?: 0
-        if (token != lastToken) {
-            lastToken = token
-            dropAnim.snapTo(0f)
-            dropAnim.animateTo(1f, tween(200))
+        val move = engine.lastMove ?: run {
+            prevBlackKings = engine.blackKings
+            prevRedKings = engine.redKings
+            return@LaunchedEffect
+        }
+        val token = move.token
+        if (token == lastToken) return@LaunchedEffect
+        lastToken = token
+
+        // Slide from source to destination
+        slideX.snapTo((getCol(move.from) - getCol(move.to)).toFloat())
+        slideY.snapTo((getRow(move.from) - getRow(move.to)).toFloat())
+
+        // Poof for captures
+        val hasCap = move.captured.isNotEmpty()
+        if (hasCap) {
+            poofIndices = move.captured.toSet()
+            poofProgress.snapTo(0f)
+        }
+
+        // King promotion detection
+        val kingPromoted = engine.blackKings > prevBlackKings || engine.redKings > prevRedKings
+        prevBlackKings = engine.blackKings
+        prevRedKings = engine.redKings
+        if (kingPromoted) {
+            promotedIndex = move.to
+            crownBounce.snapTo(0f)
+        }
+
+        // Launch concurrent animations
+        launch { slideX.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMedium)) }
+        launch { slideY.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMedium)) }
+        if (hasCap) {
+            launch { poofProgress.animateTo(1f, tween(350)) }
+        }
+        if (kingPromoted) {
+            launch { crownBounce.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMediumLow)) }
         }
     }
 
@@ -192,6 +245,8 @@ fun CheckersGame() {
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
+                .shadow(4.dp, RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(4.dp))
                 .pointerInput(isGameOver, isAiTurn) {
                     detectTapGestures { offset ->
                         val cellW = size.width / BOARD_SIZE.toFloat()
@@ -244,11 +299,13 @@ fun CheckersGame() {
 
                     val piece = boardSnapshot[idx]
                     if (piece != null) {
-                        // Animate the piece that just landed
-                        val isLastTarget = lastMoveSnapshot?.to == idx && dropAnim.value < 1f
-                        val animOffset = if (isLastTarget) (1f - dropAnim.value) * cellH * -0.3f else 0f
+                        // Smooth slide animation for the moved piece
+                        val isMovedPiece = lastMoveSnapshot?.to == idx
+                        val slideOffX = if (isMovedPiece) slideX.value * cellW else 0f
+                        val slideOffY = if (isMovedPiece) slideY.value * cellH else 0f
+                        val crownAnim = if (isMovedPiece && promotedIndex == idx) crownBounce.value else 1f
 
-                        drawCheckerPiece(cx, cy + animOffset, pieceRadius, strokeW, piece)
+                        drawCheckerPiece(cx + slideOffX, cy + slideOffY, pieceRadius, strokeW, piece, crownAnim)
 
                         // Movable indicator dot
                         if (movable.contains(idx) && !isSelected && !isGameOver) {
@@ -258,22 +315,50 @@ fun CheckersGame() {
                                 center = Offset(left + cellW * 0.85f, top + cellH * 0.15f),
                             )
                         }
-                    } else if (isDest) {
-                        // Destination dot
-                        drawCircle(
-                            color = CyanGlow,
-                            radius = cellW * 0.14f,
-                            center = Offset(cx, cy),
-                            style = Stroke(width = strokeW * 0.5f),
-                        )
-                        drawCircle(
-                            color = DestDotFill,
-                            radius = cellW * 0.08f,
-                            center = Offset(cx, cy),
-                        )
+                    } else {
+                        // Capture poof effect
+                        if (poofIndices.contains(idx) && poofProgress.value < 1f) {
+                            val p = poofProgress.value
+                            val poofAlpha = (1f - p).coerceIn(0f, 1f)
+                            drawCircle(
+                                color = Color.White.copy(alpha = poofAlpha * 0.5f),
+                                radius = pieceRadius * (1f + p * 0.8f),
+                                center = Offset(cx, cy),
+                            )
+                            drawCircle(
+                                color = RoseBorder.copy(alpha = poofAlpha * 0.6f),
+                                radius = pieceRadius * (1f + p * 0.8f),
+                                center = Offset(cx, cy),
+                                style = Stroke(width = strokeW * 1.5f),
+                            )
+                        }
+
+                        if (isDest) {
+                            // Destination dot
+                            drawCircle(
+                                color = CyanGlow,
+                                radius = cellW * 0.14f,
+                                center = Offset(cx, cy),
+                                style = Stroke(width = strokeW * 0.5f),
+                            )
+                            drawCircle(
+                                color = DestDotFill,
+                                radius = cellW * 0.08f,
+                                center = Offset(cx, cy),
+                            )
+                        }
                     }
                 }
             }
+
+            // Board depth gradient for subtle shadow/tilt effect
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.08f)),
+                    startY = size.height * 0.7f,
+                    endY = size.height,
+                ),
+            )
         }
     }
 }
@@ -284,6 +369,7 @@ private fun DrawScope.drawCheckerPiece(
     radius: Float,
     strokeW: Float,
     piece: com.napolitain.arcade.logic.checkers.Piece,
+    crownScale: Float = 1f,
 ) {
     val isBlack = piece.color == PieceColor.B
     val fill = if (isBlack) BlackPieceFill else RedPieceFill
@@ -296,10 +382,11 @@ private fun DrawScope.drawCheckerPiece(
     // Specular highlight
     drawCircle(highlight, radius * 0.2f, Offset(cx - radius * 0.35f, cy - radius * 0.4f))
 
-    // Crown for kings
+    // Crown for kings (with scale bounce on promotion)
     if (piece.king) {
-        val crownW = radius * 1.3f
-        val crownH = radius * 0.55f
+        val cs = crownScale
+        val crownW = radius * 1.3f * cs
+        val crownH = radius * 0.55f * cs
         val crownTop = cy + radius * 0.05f - crownH / 2f
         val crownBottom = crownTop + crownH
         val crownLeft = cx - crownW / 2f
@@ -314,10 +401,10 @@ private fun DrawScope.drawCheckerPiece(
             close()
         }
         drawPath(path, CrownColor, style = Fill)
-        drawPath(path, CrownStroke, style = Stroke(width = strokeW * 0.6f))
+        drawPath(path, CrownStroke, style = Stroke(width = strokeW * 0.6f * cs))
 
         // Crown base band
-        val bandH = radius * 0.17f
+        val bandH = radius * 0.17f * cs
         drawRoundRect(
             color = CrownColor,
             topLeft = Offset(crownLeft, crownBottom - bandH * 0.3f),
@@ -329,7 +416,7 @@ private fun DrawScope.drawCheckerPiece(
             topLeft = Offset(crownLeft, crownBottom - bandH * 0.3f),
             size = androidx.compose.ui.geometry.Size(crownW, bandH),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(bandH / 2f, bandH / 2f),
-            style = Stroke(width = strokeW * 0.6f),
+            style = Stroke(width = strokeW * 0.6f * cs),
         )
     }
 }

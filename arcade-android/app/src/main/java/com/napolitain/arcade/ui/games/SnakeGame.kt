@@ -30,6 +30,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.unit.dp
 import com.napolitain.arcade.R
@@ -37,6 +45,7 @@ import com.napolitain.arcade.logic.snake.Direction
 import com.napolitain.arcade.logic.snake.SnakeEngine
 import com.napolitain.arcade.ui.components.GameShell
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 @Composable
 fun SnakeGame() {
@@ -53,6 +62,40 @@ fun SnakeGame() {
     val snakeBodyColor = Color(0xFF10B981)
     val foodColor = Color(0xFFFB7185)
     val cellBgColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+
+    // Food pulse animation
+    val foodTransition = rememberInfiniteTransition(label = "food")
+    val foodPulse = foodTransition.animateFloat(
+        initialValue = 0.40f,
+        targetValue = 0.46f,
+        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+        label = "foodPulse",
+    ).value
+
+    // Smooth head interpolation
+    val headAnimX = remember { Animatable(engine.snake.first().x.toFloat()) }
+    val headAnimY = remember { Animatable(engine.snake.first().y.toFloat()) }
+    LaunchedEffect(engine.snake.first().x, engine.snake.first().y) {
+        val head = engine.snake.first()
+        val dx = abs(headAnimX.value - head.x.toFloat())
+        val dy = abs(headAnimY.value - head.y.toFloat())
+        if (dx > 2f || dy > 2f) {
+            headAnimX.snapTo(head.x.toFloat())
+            headAnimY.snapTo(head.y.toFloat())
+        } else {
+            launch { headAnimX.animateTo(head.x.toFloat(), spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessHigh)) }
+            launch { headAnimY.animateTo(head.y.toFloat(), spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessHigh)) }
+        }
+    }
+
+    // Flash/ripple when food is eaten
+    val flashAlpha = remember { Animatable(0f) }
+    LaunchedEffect(engine.score) {
+        if (engine.score > 0) {
+            flashAlpha.snapTo(0.7f)
+            flashAlpha.animateTo(0f, tween(350))
+        }
+    }
 
     GameShell(
         title = stringResource(R.string.game_snake),
@@ -105,52 +148,23 @@ fun SnakeGame() {
                     val snakeIndex = snakeSet[key]
 
                     when {
-                        snakeIndex == 0 -> {
-                            // Snake head
-                            drawRoundRect(
-                                color = snakeHeadColor,
-                                topLeft = Offset(left, top),
-                                size = Size(cellSize, cellSize),
-                                cornerRadius = CornerRadius(cellSize * 0.35f),
-                            )
-                            // Eyes
-                            val eyeRadius = cellSize * 0.08f
-                            val cx = left + cellSize / 2f
-                            val cy = top + cellSize / 2f
-                            val eyeOffset = cellSize * 0.2f
-                            when (engine.direction) {
-                                Direction.RIGHT -> {
-                                    drawCircle(Color.Black, eyeRadius, Offset(cx + eyeOffset, cy - eyeOffset))
-                                    drawCircle(Color.Black, eyeRadius, Offset(cx + eyeOffset, cy + eyeOffset))
-                                }
-                                Direction.LEFT -> {
-                                    drawCircle(Color.Black, eyeRadius, Offset(cx - eyeOffset, cy - eyeOffset))
-                                    drawCircle(Color.Black, eyeRadius, Offset(cx - eyeOffset, cy + eyeOffset))
-                                }
-                                Direction.UP -> {
-                                    drawCircle(Color.Black, eyeRadius, Offset(cx - eyeOffset, cy - eyeOffset))
-                                    drawCircle(Color.Black, eyeRadius, Offset(cx + eyeOffset, cy - eyeOffset))
-                                }
-                                Direction.DOWN -> {
-                                    drawCircle(Color.Black, eyeRadius, Offset(cx - eyeOffset, cy + eyeOffset))
-                                    drawCircle(Color.Black, eyeRadius, Offset(cx + eyeOffset, cy + eyeOffset))
-                                }
-                            }
-                        }
+                        snakeIndex == 0 -> { /* head drawn separately with interpolation */ }
                         snakeIndex != null -> {
-                            // Snake body
+                            // Snake body with tapered segments
+                            val t = snakeIndex.toFloat() / engine.snake.size.coerceAtLeast(1)
+                            val shrink = cellSize * 0.12f * t
                             drawRoundRect(
                                 color = snakeBodyColor,
-                                topLeft = Offset(left, top),
-                                size = Size(cellSize, cellSize),
+                                topLeft = Offset(left + shrink, top + shrink),
+                                size = Size(cellSize - shrink * 2, cellSize - shrink * 2),
                                 cornerRadius = CornerRadius(cellSize * 0.3f),
                             )
                         }
                         engine.food.x == x && engine.food.y == y -> {
-                            // Food (circle)
+                            // Food with pulse animation
                             drawCircle(
                                 color = foodColor,
-                                radius = cellSize * 0.42f,
+                                radius = cellSize * foodPulse,
                                 center = Offset(left + cellSize / 2f, top + cellSize / 2f),
                             )
                             // Highlight
@@ -162,6 +176,48 @@ fun SnakeGame() {
                         }
                     }
                 }
+            }
+
+            // Smoothly interpolated snake head
+            val headLeft = gap + headAnimX.value * (cellSize + gap)
+            val headTop = gap + headAnimY.value * (cellSize + gap)
+            drawRoundRect(
+                color = snakeHeadColor,
+                topLeft = Offset(headLeft, headTop),
+                size = Size(cellSize, cellSize),
+                cornerRadius = CornerRadius(cellSize * 0.35f),
+            )
+            // Eyes
+            val eyeRadius = cellSize * 0.08f
+            val cx = headLeft + cellSize / 2f
+            val cy = headTop + cellSize / 2f
+            val eyeOffset = cellSize * 0.2f
+            when (engine.direction) {
+                Direction.RIGHT -> {
+                    drawCircle(Color.Black, eyeRadius, Offset(cx + eyeOffset, cy - eyeOffset))
+                    drawCircle(Color.Black, eyeRadius, Offset(cx + eyeOffset, cy + eyeOffset))
+                }
+                Direction.LEFT -> {
+                    drawCircle(Color.Black, eyeRadius, Offset(cx - eyeOffset, cy - eyeOffset))
+                    drawCircle(Color.Black, eyeRadius, Offset(cx - eyeOffset, cy + eyeOffset))
+                }
+                Direction.UP -> {
+                    drawCircle(Color.Black, eyeRadius, Offset(cx - eyeOffset, cy - eyeOffset))
+                    drawCircle(Color.Black, eyeRadius, Offset(cx + eyeOffset, cy - eyeOffset))
+                }
+                Direction.DOWN -> {
+                    drawCircle(Color.Black, eyeRadius, Offset(cx - eyeOffset, cy + eyeOffset))
+                    drawCircle(Color.Black, eyeRadius, Offset(cx + eyeOffset, cy + eyeOffset))
+                }
+            }
+
+            // Flash ripple when food is eaten
+            if (flashAlpha.value > 0f) {
+                drawCircle(
+                    color = Color.White.copy(alpha = flashAlpha.value),
+                    radius = cellSize * 1.2f,
+                    center = Offset(headLeft + cellSize / 2f, headTop + cellSize / 2f),
+                )
             }
         }
 

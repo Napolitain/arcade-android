@@ -1,6 +1,13 @@
 package com.napolitain.arcade.ui.games
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -18,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -43,6 +51,7 @@ import com.napolitain.arcade.ui.components.GameMode
 import com.napolitain.arcade.ui.components.GameModeToggle
 import com.napolitain.arcade.ui.components.GameShell
 import kotlinx.coroutines.delay
+import kotlin.math.sqrt
 
 // Token colours
 private val BlueFill = Color(0xFF38BDF8)
@@ -76,6 +85,57 @@ fun TakeoverGame() {
         engine.performAiMove()
     }
 
+    // ── Per-piece conversion animations (ripple/wave outward from placed piece) ──
+    // Maps cell index → animation progress 0..1 for converted pieces
+    val conversionProgresses = remember { mutableStateMapOf<Int, Float>() }
+
+    // Move animation progress: for clone growing / jump sliding
+    val moveAnim = remember { Animatable(1f) }
+
+    LaunchedEffect(engine.animationCycle) {
+        if (engine.animationCycle == 0) return@LaunchedEffect
+        val targetIdx = engine.lastMove?.to ?: -1
+        val targetRow = if (targetIdx >= 0) getRow(targetIdx) else 0
+        val targetCol = if (targetIdx >= 0) getCol(targetIdx) else 0
+
+        // Animate the move itself (clone grow / jump slide)
+        launch {
+            moveAnim.snapTo(0f)
+            moveAnim.animateTo(
+                1f,
+                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+            )
+        }
+
+        // Stagger conversion animations spreading outward from the placed piece
+        val converted = engine.lastConverted
+        val sorted = converted.sortedBy { idx ->
+            val dr = getRow(idx) - targetRow
+            val dc = getCol(idx) - targetCol
+            sqrt((dr * dr + dc * dc).toFloat())
+        }
+        sorted.forEachIndexed { i, idx ->
+            conversionProgresses[idx] = 0f
+            launch {
+                delay(i * 60L) // sequential wave timing
+                val anim = Animatable(0f)
+                anim.animateTo(1f, tween(300, easing = FastOutSlowInEasing)) {
+                    conversionProgresses[idx] = value
+                }
+            }
+        }
+    }
+
+    // Gentle pulse on selectable pieces
+    val pulseAnim = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        pulseAnim.animateTo(
+            1f,
+            infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        )
+    }
+    val pulseValue = pulseAnim.value
+
     // Animate conversion colours
     val blueCardColor by animateColorAsState(
         targetValue = if (!engine.isGameOver && engine.currentPlayer == Player.B)
@@ -90,6 +150,18 @@ fun TakeoverGame() {
         else MaterialTheme.colorScheme.surfaceVariant,
         animationSpec = tween(300),
         label = "orangeCard",
+    )
+
+    // ── Smooth animated score counters ───────────────────────────
+    val animBlueCount by animateIntAsState(
+        targetValue = engine.blueCount,
+        animationSpec = tween(350),
+        label = "blueCount",
+    )
+    val animOrangeCount by animateIntAsState(
+        targetValue = engine.orangeCount,
+        animationSpec = tween(350),
+        label = "orangeCount",
     )
 
     GameShell(
@@ -122,7 +194,7 @@ fun TakeoverGame() {
                     ) {
                         Text(stringResource(R.string.takeover_blue), style = MaterialTheme.typography.labelLarge)
                         Text(
-                            "${engine.blueCount}",
+                            "$animBlueCount",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -146,7 +218,7 @@ fun TakeoverGame() {
                     ) {
                         Text(stringResource(R.string.takeover_orange), style = MaterialTheme.typography.labelLarge)
                         Text(
-                            "${engine.orangeCount}",
+                            "$animOrangeCount",
                             style = MaterialTheme.typography.labelLarge,
                             color = Color(0xFFFB923C),
                         )
@@ -203,6 +275,8 @@ fun TakeoverGame() {
         val gameOver = engine.isGameOver
         val aiTurn = engine.isAiTurn
         val animCycle = engine.animationCycle
+        val moveP = moveAnim.value
+        val convSnap = conversionProgresses.toMap()
 
         Canvas(
             modifier = Modifier
@@ -273,10 +347,51 @@ fun TakeoverGame() {
                 val cx = x + cellSize / 2f
                 val cy = y + cellSize / 2f
 
-                // Draw token
+                // Draw token with animations
                 if (cell != null) {
                     val isConverted = convertedSet.contains(idx)
-                    drawToken(cx, cy, cellSize * 0.36f, cell, isConverted)
+                    val convP = if (isConverted) convSnap[idx] ?: 1f else 1f
+
+                    if (isLastTarget && moveP < 1f) {
+                        // Animate the newly placed/moved piece
+                        val moveKind = lastMoveState?.kind
+                        if (moveKind == MoveKind.CLONE) {
+                            // Clone: piece grows from 0 to full size with spring
+                            val scale = moveP
+                            drawToken(cx, cy, cellSize * 0.36f * scale, cell, false, 1f)
+                        } else if (moveKind == MoveKind.JUMP) {
+                            // Jump: piece slides from source position with a trail
+                            val fromIdx = lastMoveState?.from ?: idx
+                            val fromRow = getRow(fromIdx)
+                            val fromCol = getCol(fromIdx)
+                            val fromCx = fromCol * cellSize + cellSize / 2f
+                            val fromCy = fromRow * cellSize + cellSize / 2f
+                            val curX = fromCx + (cx - fromCx) * moveP
+                            val curY = fromCy + (cy - fromCy) * moveP
+                            // Trail: fading circles along the path
+                            val trailSteps = 3
+                            for (t in 0 until trailSteps) {
+                                val trailP = (moveP - t * 0.08f).coerceIn(0f, 1f)
+                                val tx = fromCx + (cx - fromCx) * trailP
+                                val ty = fromCy + (cy - fromCy) * trailP
+                                val trailAlpha = (0.15f - t * 0.04f).coerceAtLeast(0f)
+                                val trailFill = if (cell == Player.B) BlueFill else OrangeFill
+                                drawCircle(trailFill.copy(alpha = trailAlpha), cellSize * 0.28f, Offset(tx, ty))
+                            }
+                            drawToken(curX, curY, cellSize * 0.36f, cell, false, 1f)
+                        } else {
+                            drawToken(cx, cy, cellSize * 0.36f, cell, isConverted, convP)
+                        }
+                    } else if (isConverted && convP < 1f) {
+                        // Crossfade colour transition for converted pieces
+                        drawToken(cx, cy, cellSize * 0.36f, cell, true, convP)
+                    } else {
+                        // Selectable piece pulse
+                        val scale = if (isSelectableSrc && !isSelectedSrc) {
+                            1f + 0.06f * pulseValue
+                        } else 1f
+                        drawToken(cx, cy, cellSize * 0.36f * scale, cell, false, 1f)
+                    }
                 } else if (isTarget) {
                     // Draw target dot
                     val dotColor = if (targetKind == MoveKind.CLONE) CloneDot else JumpDot
@@ -286,10 +401,11 @@ fun TakeoverGame() {
                     drawCircle(dotColor, innerR, Offset(cx, cy))
                 }
 
-                // Selectable source subtle border
+                // Selectable source subtle border with pulse
                 if (isSelectableSrc && !isSelectedSrc) {
+                    val borderAlpha = 0.3f + 0.2f * pulseValue
                     drawRoundRect(
-                        color = Color(0xFF22D3EE).copy(alpha = 0.45f),
+                        color = Color(0xFF22D3EE).copy(alpha = borderAlpha),
                         topLeft = Offset(x + padding, y + padding),
                         size = Size(cellSize - padding * 2, cellSize - padding * 2),
                         cornerRadius = CornerRadius(cornerRadius),
@@ -309,7 +425,7 @@ fun TakeoverGame() {
     }
 }
 
-private fun DrawScope.drawToken(cx: Float, cy: Float, radius: Float, player: Player, isConverted: Boolean) {
+private fun DrawScope.drawToken(cx: Float, cy: Float, radius: Float, player: Player, isConverted: Boolean, conversionProgress: Float) {
     val fill: Color
     val stroke: Color
     val highlight: Color
@@ -320,22 +436,48 @@ private fun DrawScope.drawToken(cx: Float, cy: Float, radius: Float, player: Pla
         fill = OrangeFill; stroke = OrangeStroke; highlight = OrangeHighlight
     }
 
-    // Outer ring (stroke)
-    drawCircle(stroke, radius, Offset(cx, cy), style = Stroke(width = radius * 0.2f))
-    // Filled body
-    drawCircle(fill, radius * 0.88f, Offset(cx, cy), style = Fill)
-    // Specular highlight
-    drawCircle(highlight, radius * 0.22f, Offset(cx - radius * 0.3f, cy - radius * 0.35f))
+    // Crossfade: lerp from old colour to new colour during conversion
+    val drawFill: Color
+    val drawStroke: Color
+    val drawHighlight: Color
+    if (isConverted && conversionProgress < 1f) {
+        val oldFill = if (player == Player.B) OrangeFill else BlueFill
+        val oldStroke = if (player == Player.B) OrangeStroke else BlueStroke
+        val oldHighlight = if (player == Player.B) OrangeHighlight else BlueHighlight
+        drawFill = lerpColor(oldFill, fill, conversionProgress)
+        drawStroke = lerpColor(oldStroke, stroke, conversionProgress)
+        drawHighlight = lerpColor(oldHighlight, highlight, conversionProgress)
+    } else {
+        drawFill = fill; drawStroke = stroke; drawHighlight = highlight
+    }
 
-    // Conversion ripple
-    if (isConverted) {
+    // Outer ring (stroke)
+    drawCircle(drawStroke, radius, Offset(cx, cy), style = Stroke(width = radius * 0.2f))
+    // Filled body
+    drawCircle(drawFill, radius * 0.88f, Offset(cx, cy), style = Fill)
+    // Specular highlight
+    drawCircle(drawHighlight, radius * 0.22f, Offset(cx - radius * 0.3f, cy - radius * 0.35f))
+
+    // Conversion ripple wave
+    if (isConverted && conversionProgress < 1f) {
+        val rippleRadius = radius * (1f + 0.5f * conversionProgress)
+        val rippleAlpha = 0.4f * (1f - conversionProgress)
         drawCircle(
-            color = fill.copy(alpha = 0.25f),
-            radius = radius * 1.3f,
+            color = drawFill.copy(alpha = rippleAlpha),
+            radius = rippleRadius,
             center = Offset(cx, cy),
             style = Stroke(width = radius * 0.08f),
         )
     }
+}
+
+private fun lerpColor(a: Color, b: Color, t: Float): Color {
+    return Color(
+        red = a.red + (b.red - a.red) * t,
+        green = a.green + (b.green - a.green) * t,
+        blue = a.blue + (b.blue - a.blue) * t,
+        alpha = a.alpha + (b.alpha - a.alpha) * t,
+    )
 }
 
 @Composable

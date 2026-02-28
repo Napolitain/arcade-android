@@ -1,6 +1,12 @@
 package com.napolitain.arcade.ui.games
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -20,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextMeasurer
@@ -60,8 +67,11 @@ private fun tileTextColor(value: Int): Color = when (value) {
 
 private fun DrawScope.drawGrid(
     grid: IntArray,
+    prevGrid: IntArray,
     textMeasurer: TextMeasurer,
     tileScale: Float,
+    colorProgress: Float,
+    celebrationScale: Float,
 ) {
     val gridSize = Game2048Engine.SIZE
     val padding = size.minDimension * 0.03f
@@ -82,20 +92,40 @@ private fun DrawScope.drawGrid(
         for (col in 0 until gridSize) {
             val index = row * gridSize + col
             val value = grid[index]
+            val prevValue = prevGrid[index]
             val x = padding + col * (tileSize + gap)
             val y = padding + row * (tileSize + gap)
 
             // Scale from centre for spawn/merge animation
-            val scale = if (value != 0) tileScale else 1f
+            val baseScale = if (value != 0) tileScale else 1f
+            // Extra pulse for 2048+ tiles during celebration
+            val scale = if (value >= 2048) baseScale * celebrationScale else baseScale
             val scaledSize = tileSize * scale
             val offset = (tileSize - scaledSize) / 2f
 
+            // Smooth color transition when a tile merges into a new value
+            val bgColor = if (prevValue != value && prevValue != 0 && value != 0) {
+                lerpColor(tileBackground(prevValue), tileBackground(value), colorProgress)
+            } else {
+                tileBackground(value)
+            }
+
             drawRoundRect(
-                color = tileBackground(value),
+                color = bgColor,
                 topLeft = Offset(x + offset, y + offset),
                 size = Size(scaledSize, scaledSize),
                 cornerRadius = cornerRadius,
             )
+
+            // Celebration glow for 2048+ tiles
+            if (value >= 2048 && celebrationScale > 1f) {
+                drawRoundRect(
+                    color = Color(0x30FFD700),
+                    topLeft = Offset(x + offset - 2f, y + offset - 2f),
+                    size = Size(scaledSize + 4f, scaledSize + 4f),
+                    cornerRadius = cornerRadius,
+                )
+            }
 
             if (value != 0) {
                 val fontPx = when {
@@ -138,13 +168,31 @@ fun Game2048() {
         else                          -> stringResource(R.string.g2048_instruction)
     }
 
-    // Tile pop animation on every grid change
+    // Tile pop animation on every grid change (spring physics)
     val tileAnim = remember { Animatable(0.85f) }
+    val prevGrid = remember { IntArray(Game2048Engine.SIZE * Game2048Engine.SIZE) }
     val gridSnapshot = engine.grid   // read state so LaunchedEffect re-triggers
     LaunchedEffect(gridSnapshot) {
         tileAnim.snapTo(0.85f)
-        tileAnim.animateTo(1f, animationSpec = tween(durationMillis = 120))
+        tileAnim.animateTo(
+            1f,
+            animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium),
+        )
+        gridSnapshot.copyInto(prevGrid)
     }
+
+    // Color-lerp progress derived from tile scale animation
+    val colorProgress = ((tileAnim.value - 0.85f) / 0.15f).coerceIn(0f, 1f)
+
+    // Celebration pulse when the player reaches 2048
+    val infiniteTransition = rememberInfiniteTransition(label = "celebration")
+    val celebrationPulse = infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+        label = "pulse",
+    ).value
+    val celebrationScale = if (engine.won) celebrationPulse else 1f
 
     GameShell(
         title = stringResource(R.string.game_2048),
@@ -184,7 +232,14 @@ fun Game2048() {
                     )
                 },
         ) {
-            drawGrid(grid = engine.grid, textMeasurer = textMeasurer, tileScale = tileAnim.value)
+            drawGrid(
+                grid = engine.grid,
+                prevGrid = prevGrid,
+                textMeasurer = textMeasurer,
+                tileScale = tileAnim.value,
+                colorProgress = colorProgress,
+                celebrationScale = celebrationScale,
+            )
         }
 
         // ── Direction buttons ──────────────────────────────────────────

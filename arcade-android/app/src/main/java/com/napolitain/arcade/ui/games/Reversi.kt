@@ -1,6 +1,12 @@
 package com.napolitain.arcade.ui.games
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -18,6 +24,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,14 +76,68 @@ fun ReversiGame() {
         engine.performAiMove()
     }
 
-    // Disc place / flip animation (0 → 1)
-    val animProgress = remember { Animatable(1f) }
+    // ── Per-disc staggered flip animations ───────────────────────
+    // Maps cell index → current animation progress (0..1)
+    val flipProgresses = remember { mutableStateMapOf<Int, Float>() }
+    val flippedSet = remember(engine.lastFlippedIndices) { engine.lastFlippedIndices.toSet() }
+    val lastPlacedIndex = engine.lastPlacedIndex
+
     LaunchedEffect(engine.animationCycle) {
-        if (engine.animationCycle > 0) {
-            animProgress.snapTo(0f)
-            animProgress.animateTo(1f, tween(300))
+        if (engine.animationCycle == 0) return@LaunchedEffect
+        // Stagger each flip 50ms apart
+        val sorted = engine.lastFlippedIndices.sortedBy { idx ->
+            if (lastPlacedIndex < 0) 0
+            else {
+                val pr = lastPlacedIndex / BOARD_SIZE; val pc = lastPlacedIndex % BOARD_SIZE
+                val fr = idx / BOARD_SIZE; val fc = idx % BOARD_SIZE
+                abs(pr - fr) + abs(pc - fc)
+            }
+        }
+        sorted.forEachIndexed { i, idx ->
+            flipProgresses[idx] = 0f
+            launch {
+                delay(i * 50L)
+                val anim = Animatable(0f)
+                anim.animateTo(1f, tween(350, easing = FastOutSlowInEasing)) {
+                    flipProgresses[idx] = value
+                }
+            }
         }
     }
+
+    // Bounce animation for newly placed disc (spring overshoot)
+    val placeBounce = remember { Animatable(1f) }
+    LaunchedEffect(engine.animationCycle) {
+        if (engine.animationCycle > 0) {
+            placeBounce.snapTo(0f)
+            placeBounce.animateTo(
+                1f,
+                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+            )
+        }
+    }
+
+    // Pulsing glow for legal move indicators
+    val pulseAnim = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        pulseAnim.animateTo(
+            1f,
+            infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        )
+    }
+    val pulseAlpha = pulseAnim.value
+
+    // ── Smooth animated score counters ───────────────────────────
+    val animBlackCount by animateIntAsState(
+        targetValue = engine.blackCount,
+        animationSpec = tween(350),
+        label = "blackCount",
+    )
+    val animWhiteCount by animateIntAsState(
+        targetValue = engine.whiteCount,
+        animationSpec = tween(350),
+        label = "whiteCount",
+    )
 
     val whiteLabel = if (engine.mode == GameMode.AI) stringResource(R.string.reversi_white_ai) else stringResource(R.string.reversi_white)
 
@@ -100,7 +162,7 @@ fun ReversiGame() {
             ScoreCard(
                 modifier = Modifier.weight(1f),
                 label = stringResource(R.string.reversi_black),
-                count = engine.blackCount,
+                count = animBlackCount,
                 isActive = !engine.isGameOver && engine.currentPlayer == Disc.B,
                 discColor = BlackFill,
                 discBorder = BlackStroke,
@@ -108,7 +170,7 @@ fun ReversiGame() {
             ScoreCard(
                 modifier = Modifier.weight(1f),
                 label = whiteLabel,
-                count = engine.whiteCount,
+                count = animWhiteCount,
                 isActive = !engine.isGameOver && engine.currentPlayer == Disc.W,
                 discColor = WhiteFill,
                 discBorder = WhiteStroke,
@@ -136,8 +198,10 @@ fun ReversiGame() {
         val legalMoveSet = engine.legalMoveSet
         val gameOver = engine.isGameOver
         val lastPlaced = engine.lastPlacedIndex
-        val flippedSet = remember(engine.lastFlippedIndices) { engine.lastFlippedIndices.toSet() }
-        val progress = animProgress.value
+        val placeP = placeBounce.value
+
+        // Capture snapshot of flip progresses for drawing
+        val flipSnap = flipProgresses.toMap()
 
         Canvas(
             modifier = Modifier
@@ -193,30 +257,54 @@ fun ReversiGame() {
                 // Disc with animation
                 if (disc != null) {
                     val isBlack = disc == Disc.B
-                    val fill = if (isBlack) BlackFill else WhiteFill
-                    val stroke = if (isBlack) BlackStroke else WhiteStroke
-                    val shine = if (isBlack) BlackShine else WhiteShine
+                    val oppositeBlack = !isBlack
 
-                    val scale = when {
-                        isPlaced && progress < 1f -> progress
-                        isFlipped && progress < 1f -> abs(2f * progress - 1f)
-                        else -> 1f
+                    // 3D flip: scaleX goes 1→0→1, colour changes at midpoint
+                    val flipP = if (isFlipped) flipSnap[index] ?: 1f else 1f
+                    val scaleX: Float
+                    val drawBlack: Boolean
+                    if (isFlipped && flipP < 1f) {
+                        // First half (0→0.5): shrink showing old colour; second half (0.5→1): grow showing new colour
+                        scaleX = abs(2f * flipP - 1f)
+                        drawBlack = if (flipP < 0.5f) oppositeBlack else isBlack
+                    } else {
+                        scaleX = 1f
+                        drawBlack = isBlack
                     }
 
-                    val r = cs * 0.38f * scale
-                    if (r > 0.5f) {
-                        drawCircle(fill, r, center)
-                        drawCircle(stroke, r, center, style = Stroke(cs * 0.07f))
+                    val fill = if (drawBlack) BlackFill else WhiteFill
+                    val stroke = if (drawBlack) BlackStroke else WhiteStroke
+                    val shine = if (drawBlack) BlackShine else WhiteShine
+
+                    // Bounce scale for newly placed disc
+                    val bounceScale = if (isPlaced && placeP < 1f) placeP else 1f
+
+                    val r = cs * 0.38f * bounceScale
+                    val rX = r * scaleX
+                    if (rX > 0.5f) {
+                        // Draw ellipse for 3D rotation effect (scaleX narrows the disc)
+                        val ellipseSize = Size(rX * 2, r * 2)
+                        val topLeft = Offset(center.x - rX, center.y - r)
+                        drawOval(fill, topLeft, ellipseSize)
+                        drawOval(stroke, topLeft, ellipseSize, style = Stroke(cs * 0.07f))
+                        // Shine highlight
                         drawCircle(
                             shine,
-                            r * 0.2f,
-                            Offset(center.x - r * 0.28f, center.y - r * 0.28f),
+                            r * 0.2f * scaleX,
+                            Offset(center.x - rX * 0.28f, center.y - r * 0.28f),
                         )
                     }
                 }
 
-                // Legal-move indicator
+                // Legal-move indicator with pulsing glow
                 if (isLegal && disc == null) {
+                    val glowAlpha = 0.25f + 0.35f * pulseAlpha
+                    val glowRadius = cs * (0.18f + 0.06f * pulseAlpha)
+                    drawCircle(
+                        LegalDot.copy(alpha = glowAlpha),
+                        glowRadius,
+                        center,
+                    )
                     drawCircle(LegalRing, cs * 0.12f, center, style = Stroke(cs * 0.025f))
                     drawCircle(LegalDot, cs * 0.07f, center)
                 }
