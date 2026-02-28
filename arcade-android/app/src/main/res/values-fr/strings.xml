@@ -1,0 +1,131 @@
+<resources>
+    <!-- App -->
+    <string name="app_name">Mini Arcade</string>
+    <string name="app_subtitle">Choisissez un jeu et commencez à jouer.</string>
+
+    <!-- Shared components -->
+    <string name="reset">Réinitialiser</string>
+    <string name="score_label">Score : %1$s</string>
+    <string name="mode_ai">vs IA</string>
+    <string name="mode_local">Local</string>
+    <string name="difficulty_easy">Facile</string>
+    <string name="difficulty_normal">Normal</string>
+    <string name="difficulty_hard">Difficile</string>
+
+    <!-- Game names -->
+    <string name="game_tictactoe">Morpion</string>
+    <string name="game_connectfour">Puissance 4</string>
+    <string name="game_2048">2048</string>
+    <string name="game_snake">Serpent</string>
+    <string name="game_reversi">Reversi</string>
+    <string name="game_dotsandboxes">Points et Carrés</string>
+    <string name="game_wordballoon">Mot Ballon</string>
+    <string name="game_gridattack">Bataille Navale</string>
+    <string name="game_checkers">Dames</string>
+    <string name="game_balance">Équilibre</string>
+    <string name="game_takeover">Conquête</string>
+
+    <!-- Game descriptions -->
+    <string name="desc_tictactoe">Jeu de stratégie classique 3×3 pour deux joueurs.</string>
+    <string name="desc_connectfour">Insérez des jetons dans les colonnes et alignez-en quatre.</string>
+    <string name="desc_2048">Fusionnez des tuiles identiques et visez les puissances de deux.</string>
+    <string name="desc_snake">Mangez la nourriture, grandissez et évitez les collisions.</string>
+    <string name="desc_reversi">Capturez et retournez les pions en encerclant votre adversaire.</string>
+    <string name="desc_dotsandboxes">Tracez des lignes, fermez des carrés et enchaînez les tours.</string>
+    <string name="desc_wordballoon">Devinez les lettres avant que le ballon n\'éclate.</string>
+    <string name="desc_gridattack">Traquez les navires ennemis dans une bataille tactique.</string>
+    <string name="desc_checkers">Capturez en diagonale, enchaînez les sauts et couronnez les dames.</string>
+    <string name="desc_balance">Placez des poids et maintenez la poutre en équilibre.</string>
+    <string name="desc_takeover">Étendez-vous, sautez et convertissez les jetons adverses.</string>
+
+    <!-- Common game strings -->
+    <string name="player_a">Joueur A</string>
+    <string name="player_b">Joueur B</string>
+    <string name="player_label">Joueur %1$s</string>
+    <string name="ai_thinking">L\'IA réfléchit…</string>
+    <string name="ai_turn">Tour de l\'IA</string>
+    <string name="winner_label">Gagnant : %1$s</string>
+    <string name="draw">Match nul !</string>
+    <string name="to_move">À jouer</string>
+    <string name="waiting">En attente</string>
+    <string name="turn_label">Tour : %1$s</string>
+    <string name="empty_slot">Vide</string>
+
+    <!-- Direction labels -->
+    <string name="dir_up">Haut</string>
+    <string name="dir_down">Bas</string>
+    <string name="dir_left">Gauche</string>
+    <string name="dir_right">Droite</string>
+    <string name="move_label">Déplacer %1$s</string>
+
+    <!-- Tic Tac Toe -->
+    <string name="ttt_o_ai">O (IA)</string>
+
+    <!-- Game 2048 -->
+    <string name="g2048_win_over">Vous avez atteint 2048 ! Partie terminée. Score final : %1$d</string>
+    <string name="g2048_win_continue">Vous avez atteint 2048 ! Continuer ?</string>
+    <string name="g2048_game_over">Partie terminée ! Score : %1$d</string>
+    <string name="g2048_instruction">Glissez ou appuyez sur les flèches pour déplacer les tuiles.</string>
+
+    <!-- Reversi -->
+    <string name="reversi_black">Noir</string>
+    <string name="reversi_white">Blanc</string>
+    <string name="reversi_white_ai">Blanc (IA)</string>
+    <string name="reversi_pass_turn">Passe : %1$s</string>
+
+    <!-- Dots and Boxes -->
+    <string name="dab_player_b_ai">Joueur B (IA)</string>
+    <string name="dab_instruction">Touchez une ligne libre. Compléter un carré vous donne un tour supplémentaire.</string>
+
+    <!-- Word Balloon -->
+    <string name="wb_wins">Victoires : %1$d</string>
+    <string name="wb_word_to_guess">Mot à deviner</string>
+    <string name="wb_misses">Erreurs : </string>
+    <string name="wb_none">Aucune</string>
+    <string name="wb_categories">Catégories : %1$s</string>
+    <string name="wb_instruction">Touchez les lettres pour deviner.</string>
+
+    <!-- Grid Attack -->
+    <string name="ga_ship">Navire</string>
+    <string name="ga_hit">Touché</string>
+    <string name="ga_miss">Manqué</string>
+    <string name="ga_sunk">Coulé</string>
+    <string name="ga_your_fleet">Votre flotte</string>
+    <string name="ga_your_fleet_desc">Les marqueurs verts sont vos navires. Les marques rouges sont les tirs ennemis.</string>
+    <string name="ga_enemy_waters">Eaux ennemies</string>
+    <string name="ga_enemy_waters_desc">Touchez pour tirer. Les cercles jaunes indiquent les navires coulés.</string>
+    <string name="ga_your_hits">Vos tirs touchés / manqués</string>
+    <string name="ga_cpu_hits">Tirs IA touchés / manqués</string>
+    <string name="ga_enemy_sunk">Navires ennemis coulés</string>
+    <string name="ga_your_sunk">Vos navires coulés</string>
+    <string name="ga_enemy_cells">Cases ennemies restantes</string>
+    <string name="ga_your_cells">Vos cases intactes</string>
+
+    <!-- Checkers -->
+    <string name="checkers_black">Noir</string>
+    <string name="checkers_red">Rouge</string>
+    <string name="checkers_moves">Coups : %1$d</string>
+    <string name="checkers_pieces_kings">Pions : %1$d · Dames : %2$d</string>
+    <string name="checkers_captured">Capturés : %1$d</string>
+    <string name="checkers_capture_rule">Règle de prise obligatoire : seuls les coups de capture sont autorisés.</string>
+    <string name="checkers_instruction">Touchez un pion mobile, puis une case de destination en surbrillance.</string>
+
+    <!-- Balance -->
+    <string name="balance_start_round">Commencer la manche %1$d</string>
+    <string name="balance_ai_player">IA (Joueur B)</string>
+    <string name="balance_session_wins">Victoires de session : %1$d</string>
+    <string name="balance_weights">Poids : %1$s</string>
+    <string name="balance_weights_none">aucun</string>
+    <string name="balance_torque">Couple : %1$s</string>
+    <string name="balance_safe_range">Plage sûre : ±%1$d</string>
+    <string name="balance_draw_rules">Manches nulles : %1$d. Placez un poids au-delà de la limite et vous perdez la manche.</string>
+    <string name="balance_ai_choosing">L\'IA choisit un poids et un emplacement.</string>
+    <string name="balance_choose_weight">Choisissez un poids pour le Joueur %1$s, puis touchez un emplacement vide.</string>
+
+    <!-- Takeover -->
+    <string name="takeover_blue">Bleu</string>
+    <string name="takeover_orange">Orange</string>
+    <string name="takeover_source">Source</string>
+    <string name="takeover_clone">Clone</string>
+    <string name="takeover_jump">Saut</string>
+</resources>

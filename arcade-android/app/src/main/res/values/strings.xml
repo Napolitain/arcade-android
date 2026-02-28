@@ -1,3 +1,137 @@
 <resources>
-    <string name="app_name">arcade</string>
+    <!-- App -->
+    <string name="app_name">Mini Arcade</string>
+    <string name="app_subtitle">Pick a game and start playing.</string>
+
+    <!-- Shared components -->
+    <string name="reset">Reset</string>
+    <string name="score_label">Score: %1$s</string>
+    <string name="mode_ai">vs AI</string>
+    <string name="mode_local">Local</string>
+    <string name="difficulty_easy">Easy</string>
+    <string name="difficulty_normal">Normal</string>
+    <string name="difficulty_hard">Hard</string>
+
+    <!-- Game names -->
+    <string name="game_tictactoe">Tic Tac Toe</string>
+    <string name="game_connectfour">Connect Four</string>
+    <string name="game_2048">2048</string>
+    <string name="game_snake">Snake</string>
+    <string name="game_reversi">Reversi</string>
+    <string name="game_dotsandboxes">Dots and Boxes</string>
+    <string name="game_wordballoon">Word Balloon</string>
+    <string name="game_gridattack">Grid Attack</string>
+    <string name="game_checkers">Checkers</string>
+    <string name="game_balance">Balance</string>
+    <string name="game_takeover">Takeover</string>
+
+    <!-- Game descriptions -->
+    <string name="desc_tictactoe">Classic 3×3 strategy game for two players.</string>
+    <string name="desc_connectfour">Drop discs into columns and connect four in a row.</string>
+    <string name="desc_2048">Merge equal tiles and chase higher powers of two.</string>
+    <string name="desc_snake">Eat food, grow longer, and avoid collisions.</string>
+    <string name="desc_reversi">Capture and flip discs by surrounding your opponent.</string>
+    <string name="desc_dotsandboxes">Draw edges, close boxes, and chain extra turns.</string>
+    <string name="desc_wordballoon">Guess letters before the balloon pops.</string>
+    <string name="desc_gridattack">Hunt enemy ships in a tactical sea battle.</string>
+    <string name="desc_checkers">Capture diagonally, chain jumps, and crown kings.</string>
+    <string name="desc_balance">Place weighted pieces and keep the beam stable.</string>
+    <string name="desc_takeover">Expand, jump, and convert nearby enemy tokens.</string>
+
+    <!-- Common game strings -->
+    <string name="player_a">Player A</string>
+    <string name="player_b">Player B</string>
+    <string name="player_label">Player %1$s</string>
+    <string name="ai_thinking">AI is thinking…</string>
+    <string name="ai_turn">AI turn</string>
+    <string name="winner_label">Winner: %1$s</string>
+    <string name="draw">It\'s a draw!</string>
+    <string name="to_move">To move</string>
+    <string name="waiting">Waiting</string>
+    <string name="turn_label">Turn: %1$s</string>
+    <string name="empty_slot">Empty</string>
+
+    <!-- Direction labels -->
+    <string name="dir_up">Up</string>
+    <string name="dir_down">Down</string>
+    <string name="dir_left">Left</string>
+    <string name="dir_right">Right</string>
+    <string name="move_label">Move %1$s</string>
+
+    <!-- Tic Tac Toe -->
+    <string name="ttt_o_ai">O (AI)</string>
+
+    <!-- Connect Four -->
+    <!-- (uses shared strings) -->
+
+    <!-- Game 2048 -->
+    <string name="g2048_win_over">You reached 2048! Game over. Final score: %1$d</string>
+    <string name="g2048_win_continue">You reached 2048! Keep going?</string>
+    <string name="g2048_game_over">Game over! Score: %1$d</string>
+    <string name="g2048_instruction">Swipe or tap arrows to move tiles.</string>
+
+    <!-- Snake -->
+    <!-- (uses shared direction strings) -->
+
+    <!-- Reversi -->
+    <string name="reversi_black">Black</string>
+    <string name="reversi_white">White</string>
+    <string name="reversi_white_ai">White (AI)</string>
+    <string name="reversi_pass_turn">Pass turn: %1$s</string>
+
+    <!-- Dots and Boxes -->
+    <string name="dab_player_b_ai">Player B (AI)</string>
+    <string name="dab_instruction">Tap an undrawn edge. Completing one or more boxes keeps your turn.</string>
+
+    <!-- Word Balloon -->
+    <string name="wb_wins">Wins: %1$d</string>
+    <string name="wb_word_to_guess">Word to guess</string>
+    <string name="wb_misses">Misses: </string>
+    <string name="wb_none">None</string>
+    <string name="wb_categories">Categories: %1$s</string>
+    <string name="wb_instruction">Tap letters to guess.</string>
+
+    <!-- Grid Attack -->
+    <string name="ga_ship">Ship</string>
+    <string name="ga_hit">Hit</string>
+    <string name="ga_miss">Miss</string>
+    <string name="ga_sunk">Sunk</string>
+    <string name="ga_your_fleet">Your fleet</string>
+    <string name="ga_your_fleet_desc">Green markers are your ships. Red marks are enemy hits.</string>
+    <string name="ga_enemy_waters">Enemy waters</string>
+    <string name="ga_enemy_waters_desc">Tap to fire. Yellow rings mark sunk enemy ships.</string>
+    <string name="ga_your_hits">Your hits / misses</string>
+    <string name="ga_cpu_hits">CPU hits / misses</string>
+    <string name="ga_enemy_sunk">Enemy ships sunk</string>
+    <string name="ga_your_sunk">Your ships sunk</string>
+    <string name="ga_enemy_cells">Enemy cells left</string>
+    <string name="ga_your_cells">Your cells untouched</string>
+
+    <!-- Checkers -->
+    <string name="checkers_black">Black</string>
+    <string name="checkers_red">Red</string>
+    <string name="checkers_moves">Moves: %1$d</string>
+    <string name="checkers_pieces_kings">Pieces: %1$d · Kings: %2$d</string>
+    <string name="checkers_captured">Captured: %1$d</string>
+    <string name="checkers_capture_rule">Capture-first rule active: only capturing moves are allowed.</string>
+    <string name="checkers_instruction">Tap a movable piece, then a highlighted destination square.</string>
+
+    <!-- Balance -->
+    <string name="balance_start_round">Start round %1$d</string>
+    <string name="balance_ai_player">AI (Player B)</string>
+    <string name="balance_session_wins">Session wins: %1$d</string>
+    <string name="balance_weights">Weights: %1$s</string>
+    <string name="balance_weights_none">none</string>
+    <string name="balance_torque">Torque: %1$s</string>
+    <string name="balance_safe_range">Safe range: ±%1$d</string>
+    <string name="balance_draw_rules">Draw rounds: %1$d. Place a weight beyond the limit and you lose the round.</string>
+    <string name="balance_ai_choosing">AI is choosing a weight and slot.</string>
+    <string name="balance_choose_weight">Choose a weight for Player %1$s, then tap an empty slot.</string>
+
+    <!-- Takeover -->
+    <string name="takeover_blue">Blue</string>
+    <string name="takeover_orange">Orange</string>
+    <string name="takeover_source">Source</string>
+    <string name="takeover_clone">Clone</string>
+    <string name="takeover_jump">Jump</string>
 </resources>

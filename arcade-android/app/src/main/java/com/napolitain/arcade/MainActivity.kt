@@ -1,34 +1,20 @@
 package com.napolitain.arcade
 
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.widget.TextView
-import com.napolitain.arcade.databinding.ActivityMainBinding
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import com.napolitain.arcade.ui.screens.ArcadeHomeScreen
+import com.napolitain.arcade.ui.theme.ArcadeTheme
 
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var binding: ActivityMainBinding
-
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        // Example of a call to a native method
-        binding.sampleText.text = stringFromJNI()
-    }
-
-    /**
-     * A native method that is implemented by the 'arcade' native library,
-     * which is packaged with this application.
-     */
-    external fun stringFromJNI(): String
-
-    companion object {
-        // Used to load the 'arcade' library on application startup.
-        init {
-            System.loadLibrary("arcade")
+        enableEdgeToEdge()
+        setContent {
+            ArcadeTheme {
+                ArcadeHomeScreen()
+            }
         }
     }
 }
