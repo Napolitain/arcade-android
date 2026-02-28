@@ -133,7 +133,7 @@ function ConnectFour() {
         Select any slot in a column to drop your disc into the lowest available row of that column.
       </p>
       <div
-        className="grid grid-cols-7 gap-2 rounded-xl border border-slate-700/70 bg-indigo-950/50 p-3"
+        className="touch-manipulation grid grid-cols-7 gap-2 rounded-xl border border-slate-700/70 bg-indigo-950/50 p-3"
         role="grid"
         aria-label="Connect Four board"
         aria-describedby={boardInstructionsId}
@@ -152,12 +152,12 @@ function ConnectFour() {
               type="button"
               onClick={() => handleDrop(column)}
               disabled={isDisabled}
-              aria-label={`Column ${column + 1}, row ${row + 1}, ${occupancyLabel}. ${
-                columnFull ? 'Column is full.' : `Drop disc in column ${column + 1}.`
-              }`}
-              aria-describedby={boardInstructionsId}
-              className="motion-control-press aspect-square rounded-full border border-slate-800 bg-slate-700/80 p-1 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed disabled:border-slate-700/70 disabled:bg-slate-800/40 disabled:opacity-70"
-            >
+               aria-label={`Column ${column + 1}, row ${row + 1}, ${occupancyLabel}. ${
+                 columnFull ? 'Column is full.' : `Drop disc in column ${column + 1}.`
+               }`}
+               aria-describedby={boardInstructionsId}
+               className="motion-control-press touch-manipulation aspect-square rounded-full border border-slate-800 bg-slate-700/80 p-1 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed disabled:border-slate-700/70 disabled:bg-slate-800/40 disabled:opacity-70"
+             >
               {disc && <ConnectFourDisc disc={disc} animate={index === lastDropIndex} />}
             </button>
           )

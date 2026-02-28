@@ -25,7 +25,7 @@ function GameShell({ status, onReset, children, scoreLabel = 'Score', scoreValue
       <button
         type="button"
         onClick={onReset}
-        className="mt-4 w-full rounded-xl border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+        className="mt-4 w-full touch-manipulation rounded-xl border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
       >
         Restart game
       </button>

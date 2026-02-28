@@ -98,7 +98,7 @@ function TicTacToe() {
             onClick={() => handleCellClick(index)}
             disabled={Boolean(mark) || Boolean(winner)}
             aria-label={`Cell ${index + 1}${mark ? `, ${mark}` : ''}`}
-            className="aspect-square rounded-xl border border-slate-600 bg-slate-800/80 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
+            className="touch-manipulation aspect-square rounded-xl border border-slate-600 bg-slate-800/80 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <span className="flex h-full items-center justify-center">{mark && <AnimatedMark mark={mark} />}</span>
           </button>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import useSwipeGesture from './useSwipeGesture'
+import type { SwipeDirection } from './useSwipeGesture'
 
 type DirectionKey = 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown'
 type Grid = number[]
@@ -12,6 +14,12 @@ const DIRECTION_BUTTONS: ReadonlyArray<{ key: DirectionKey; label: string }> = [
   { key: 'ArrowUp', label: 'Up' },
   { key: 'ArrowDown', label: 'Down' },
 ]
+const SWIPE_TO_DIRECTION: Readonly<Record<SwipeDirection, DirectionKey>> = {
+  left: 'ArrowLeft',
+  right: 'ArrowRight',
+  up: 'ArrowUp',
+  down: 'ArrowDown',
+}
 
 function isDirectionKey(value: string): value is DirectionKey {
   return DIRECTION_KEYS.some((key) => key === value)
@@ -194,7 +202,7 @@ function Game2048() {
   const [animationCycle, setAnimationCycle] = useState(0)
   const [clickedTile, setClickedTile] = useState<{ index: number; token: number } | null>(null)
   const canMove = useMemo(() => hasMoves(grid), [grid])
-  const statusText = canMove ? 'Use arrow keys or buttons to move.' : 'Game over!'
+  const statusText = canMove ? 'Use arrow keys, swipes, or direction buttons to move.' : 'Game over!'
   const tileInstructionsId = 'game-2048-tile-instructions'
 
   const handleMove = useCallback((direction: DirectionKey) => {
@@ -242,6 +250,14 @@ function Game2048() {
     }))
   }, [])
 
+  const handleSwipe = useCallback(
+    (direction: SwipeDirection) => {
+      handleMove(SWIPE_TO_DIRECTION[direction])
+    },
+    [handleMove],
+  )
+  const swipeHandlers = useSwipeGesture({ onSwipe: handleSwipe })
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!isDirectionKey(event.key)) {
@@ -259,11 +275,12 @@ function Game2048() {
   return (
     <GameShell status={statusText} scoreValue={score} onReset={handleReset}>
       <p id={tileInstructionsId} className="sr-only">
-        Use arrow keys or direction buttons to move tiles. Selecting a tile only triggers visual click
-        feedback.
+        Use arrow keys, swipes on the board, or direction buttons to move tiles. Selecting a tile only
+        triggers visual click feedback.
       </p>
       <div
-        className="grid grid-cols-4 gap-2 rounded-xl border border-slate-700/70 bg-amber-950/40 p-3"
+        {...swipeHandlers}
+        className="touch-none grid grid-cols-4 gap-2 rounded-xl border border-slate-700/70 bg-amber-950/40 p-3"
         role="grid"
         aria-label="2048 board"
         aria-describedby={tileInstructionsId}
@@ -292,11 +309,11 @@ function Game2048() {
               key={`${index}-${isSpawned || isMerged || isMoved ? animationCycle : 'steady'}-${
                 isClicked ? clickedTile.token : 0
               }`}
-              type="button"
-              onClick={() => handleTileClick(index)}
-              className={`motion-control-press aspect-square select-none rounded-lg text-center text-lg font-bold leading-[3rem] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 sm:leading-[3.5rem] ${getTileClasses(value)} ${tileAnimationClass} ${
-                isClicked ? 'motion-click-pulse' : ''
-              }`}
+                type="button"
+                onClick={() => handleTileClick(index)}
+                className={`motion-control-press touch-manipulation aspect-square select-none rounded-lg text-center text-lg font-bold leading-[3rem] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 sm:leading-[3.5rem] ${getTileClasses(value)} ${tileAnimationClass} ${
+                  isClicked ? 'motion-click-pulse' : ''
+                }`}
               aria-label={`${tileValueLabel}. Activate for click feedback only.`}
               aria-describedby={tileInstructionsId}
             >
@@ -311,13 +328,13 @@ function Game2048() {
           <button
             key={button.key}
             type="button"
-            onClick={() => handleMove(button.key)}
-            disabled={!canMove}
-            aria-label={`Move ${button.label.toLowerCase()}`}
-            className="motion-control-press rounded-lg border border-slate-600 bg-slate-800/80 py-2 text-xs font-semibold text-slate-100 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed disabled:border-slate-700/70 disabled:bg-slate-800/40 disabled:text-slate-500"
-          >
-            {button.label}
-          </button>
+              onClick={() => handleMove(button.key)}
+              disabled={!canMove}
+              aria-label={`Move ${button.label.toLowerCase()}`}
+              className="motion-control-press touch-manipulation rounded-lg border border-slate-600 bg-slate-800/80 py-2 text-xs font-semibold text-slate-100 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed disabled:border-slate-700/70 disabled:bg-slate-800/40 disabled:text-slate-500"
+            >
+              {button.label}
+            </button>
         ))}
       </div>
     </GameShell>

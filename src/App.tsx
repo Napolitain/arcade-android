@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import type { ComponentType } from 'react'
 import ConnectFour from './games/ConnectFour'
+import DotsAndBoxes from './games/DotsAndBoxes'
 import Game2048 from './games/Game2048'
+import Reversi from './games/Reversi'
 import SnakeGame from './games/SnakeGame'
 import TicTacToe from './games/TicTacToe'
 
-type GameId = 'tic-tac-toe' | 'connect-four' | 'game-2048' | 'snake'
+type GameId = 'tic-tac-toe' | 'connect-four' | 'game-2048' | 'snake' | 'reversi' | 'dots-and-boxes'
 
 type GameDefinition = {
   id: GameId
@@ -39,6 +41,18 @@ const GAMES: ReadonlyArray<GameDefinition> = [
     description: 'Eat food, grow longer, and avoid collisions.',
     Component: SnakeGame,
   },
+  {
+    id: 'reversi',
+    name: 'Reversi',
+    description: 'Capture and flip discs by surrounding your opponent.',
+    Component: Reversi,
+  },
+  {
+    id: 'dots-and-boxes',
+    name: 'Dots and Boxes',
+    description: 'Draw edges, close boxes, and chain extra turns.',
+    Component: DotsAndBoxes,
+  },
 ]
 
 function App() {
@@ -60,7 +74,7 @@ function App() {
                 type="button"
                 onClick={() => setActiveGameId(game.id)}
                 aria-pressed={activeGameId === game.id}
-                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+                className={`touch-manipulation rounded-xl border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
                   activeGameId === game.id
                     ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100'
                     : 'border-slate-600 bg-slate-800/80 text-slate-200 hover:border-cyan-400'

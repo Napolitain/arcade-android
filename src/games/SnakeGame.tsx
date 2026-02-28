@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import useSwipeGesture from './useSwipeGesture'
+import type { SwipeDirection } from './useSwipeGesture'
 
 type Direction = 'up' | 'down' | 'left' | 'right'
 type Point = {
@@ -150,7 +152,12 @@ function SnakeGame() {
   const score = snake.length - INITIAL_SNAKE.length
   const isVictory = snake.length === GRID_SIZE * GRID_SIZE
   const controlsLocked = gameOver || isVictory
-  const statusText = gameOver ? 'Game over!' : isVictory ? 'You win!' : 'Use arrow keys or buttons to move.'
+  const statusText = gameOver
+    ? 'Game over!'
+    : isVictory
+      ? 'You win!'
+      : 'Use arrow keys, swipes, or buttons to move.'
+  const boardInstructionsId = 'snake-board-instructions'
 
   const queueDirection = useCallback(
     (nextDirection: Direction) => {
@@ -175,6 +182,14 @@ function SnakeGame() {
     setFood(createFood([...INITIAL_SNAKE]))
     setGameOver(false)
   }, [])
+
+  const handleSwipe = useCallback(
+    (nextDirection: SwipeDirection) => {
+      queueDirection(nextDirection)
+    },
+    [queueDirection],
+  )
+  const swipeHandlers = useSwipeGesture({ onSwipe: handleSwipe })
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -239,8 +254,13 @@ function SnakeGame() {
 
   return (
     <GameShell status={statusText} scoreValue={score} onReset={handleReset}>
+      <p id={boardInstructionsId} className="sr-only">
+        Use keyboard arrows, board swipes, or direction buttons to control the snake.
+      </p>
       <div
-        className="grid gap-1 rounded-xl border border-slate-700/70 bg-slate-900/80 p-2"
+        {...swipeHandlers}
+        className="touch-none grid gap-1 rounded-xl border border-slate-700/70 bg-slate-900/80 p-2"
+        aria-describedby={boardInstructionsId}
         style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))` }}
       >
         {Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, index) => {
@@ -276,7 +296,7 @@ function SnakeGame() {
               data-pressed={isQueuedDirection ? 'true' : 'false'}
               aria-label={`Move ${button.label.toLowerCase()}`}
               aria-pressed={isQueuedDirection}
-              className={`${button.positionClassName} motion-control-press flex flex-col items-center justify-center gap-1 rounded-lg border py-2 text-[0.65rem] font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed disabled:border-slate-700/70 disabled:bg-slate-800/40 disabled:text-slate-500 ${
+              className={`${button.positionClassName} motion-control-press touch-manipulation flex flex-col items-center justify-center gap-1 rounded-lg border py-2 text-[0.65rem] font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed disabled:border-slate-700/70 disabled:bg-slate-800/40 disabled:text-slate-500 ${
                 isQueuedDirection
                   ? 'motion-click-pulse border-cyan-400 bg-cyan-500/20 text-cyan-100'
                   : 'border-slate-600 bg-slate-800/80 text-slate-100 hover:border-cyan-400'
