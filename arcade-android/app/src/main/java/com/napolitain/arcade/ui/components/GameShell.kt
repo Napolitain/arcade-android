@@ -30,16 +30,14 @@ fun GameShell(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
-                Text(title, style = MaterialTheme.typography.headlineMedium)
+            Column(modifier = Modifier.weight(1f)) {
                 if (score != null) {
-                    Text(stringResource(R.string.score_label, score), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(R.string.score_label, score), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                 }
+                Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             FilledTonalButton(onClick = onReset) { Text(stringResource(R.string.reset)) }
         }
-
-        Text(status, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         content()
     }
