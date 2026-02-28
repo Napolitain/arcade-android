@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
 import GameModeToggle, { type GameMode } from './GameModeToggle'
+import GameDifficultyToggle, { type AIDifficulty } from './GameDifficultyToggle'
 
 type Disc = 'B' | 'W' | null
 type Player = Exclude<Disc, null>
@@ -128,7 +129,30 @@ function countDiscs(board: Disc[], player: Player) {
   return board.reduce((total, disc) => (disc === player ? total + 1 : total), 0)
 }
 
-function chooseAiMove(board: Disc[], legalMoves: number[], player: Player) {
+const RISKY_CORNER_BY_MOVE = new Map<number, number>([
+  [getCellIndex(0, 1), getCellIndex(0, 0)],
+  [getCellIndex(1, 0), getCellIndex(0, 0)],
+  [getCellIndex(1, 1), getCellIndex(0, 0)],
+  [getCellIndex(0, BOARD_SIZE - 2), getCellIndex(0, BOARD_SIZE - 1)],
+  [getCellIndex(1, BOARD_SIZE - 2), getCellIndex(0, BOARD_SIZE - 1)],
+  [getCellIndex(1, BOARD_SIZE - 1), getCellIndex(0, BOARD_SIZE - 1)],
+  [getCellIndex(BOARD_SIZE - 2, 0), getCellIndex(BOARD_SIZE - 1, 0)],
+  [getCellIndex(BOARD_SIZE - 2, 1), getCellIndex(BOARD_SIZE - 1, 0)],
+  [getCellIndex(BOARD_SIZE - 1, 1), getCellIndex(BOARD_SIZE - 1, 0)],
+  [getCellIndex(BOARD_SIZE - 2, BOARD_SIZE - 1), getCellIndex(BOARD_SIZE - 1, BOARD_SIZE - 1)],
+  [getCellIndex(BOARD_SIZE - 2, BOARD_SIZE - 2), getCellIndex(BOARD_SIZE - 1, BOARD_SIZE - 1)],
+  [getCellIndex(BOARD_SIZE - 1, BOARD_SIZE - 2), getCellIndex(BOARD_SIZE - 1, BOARD_SIZE - 1)],
+])
+
+function chooseAiMove(board: Disc[], legalMoves: number[], player: Player, difficulty: AIDifficulty) {
+  if (legalMoves.length === 0) {
+    return null
+  }
+
+  if (difficulty === 'easy') {
+    return legalMoves[Math.floor(Math.random() * legalMoves.length)] ?? null
+  }
+
   let bestMove: { index: number; score: number } | null = null
 
   for (const index of legalMoves) {
@@ -136,7 +160,30 @@ function chooseAiMove(board: Disc[], legalMoves: number[], player: Player) {
     const column = index % BOARD_SIZE
     const captures = getCapturedDiscs(board, row, column, player).length
     const isCorner = (row === 0 || row === BOARD_SIZE - 1) && (column === 0 || column === BOARD_SIZE - 1)
-    const score = (isCorner ? 1000 : 0) + captures
+    let score = (isCorner ? 1000 : 0) + captures
+
+    if (difficulty === 'hard') {
+      const move = applyMove(board, index, player)
+
+      if (!move) {
+        continue
+      }
+
+      const opponent = getOpponent(player)
+      const opponentMobility = getLegalMoves(move.nextBoard, opponent).length
+      const playerLead = countDiscs(move.nextBoard, player) - countDiscs(move.nextBoard, opponent)
+      const isEdge = row === 0 || row === BOARD_SIZE - 1 || column === 0 || column === BOARD_SIZE - 1
+      const riskyCorner = RISKY_CORNER_BY_MOVE.get(index)
+      const cornerRiskPenalty = riskyCorner !== undefined && board[riskyCorner] === null ? 80 : 0
+
+      score =
+        (isCorner ? 1200 : 0) +
+        captures * 8 +
+        (isEdge ? 10 : 0) +
+        playerLead * 3 -
+        opponentMobility * 6 -
+        cornerRiskPenalty
+    }
 
     if (!bestMove || score > bestMove.score || (score === bestMove.score && index < bestMove.index)) {
       bestMove = { index, score }
@@ -180,6 +227,7 @@ function ReversiDisc({ disc, animation }: { disc: Player; animation: DiscAnimati
 
 function Reversi() {
   const [mode, setMode] = useState<GameMode>('local')
+  const [difficulty, setDifficulty] = useState<AIDifficulty>('normal')
   const [board, setBoard] = useState<Disc[]>(() => createInitialBoard())
   const [currentPlayer, setCurrentPlayer] = useState<Player>('B')
   const [isGameOver, setIsGameOver] = useState(false)
@@ -274,7 +322,7 @@ function Reversi() {
     }
 
     const timeout = setTimeout(() => {
-      const aiMove = chooseAiMove(board, legalMoveIndexes, currentPlayer)
+      const aiMove = chooseAiMove(board, legalMoveIndexes, currentPlayer, difficulty)
 
       if (aiMove !== null) {
         playMove(aiMove)
@@ -282,7 +330,7 @@ function Reversi() {
     }, 280)
 
     return () => clearTimeout(timeout)
-  }, [board, currentPlayer, isAiTurn, legalMoveIndexes, playMove])
+  }, [board, currentPlayer, difficulty, isAiTurn, legalMoveIndexes, playMove])
 
   const resetGame = () => {
     setBoard(createInitialBoard())
@@ -310,6 +358,7 @@ function Reversi() {
   return (
     <GameShell status={statusText} onReset={handleReset}>
       <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+      {mode === 'ai' && <GameDifficultyToggle difficulty={difficulty} onDifficultyChange={setDifficulty} />}
 
       <p id={boardInstructionsId} className="sr-only">
         Place discs on highlighted cells to capture lines of your opponent&apos;s discs.

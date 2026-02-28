@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import GameDifficultyToggle, { type AIDifficulty } from './GameDifficultyToggle'
 import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type Player = 'A' | 'B'
@@ -61,16 +62,29 @@ function getSlotLabel(slot: SlotPosition) {
   return `${side}${Math.abs(slot)}`
 }
 
-function pickBalanceAiMove(placements: PlacedWeight[], availableWeights: number[]) {
+function scoreBalanceMove(currentTorque: number, slot: SlotPosition, weight: number) {
+  const nextTorque = currentTorque + slot * weight
+  const overflow = Math.max(0, Math.abs(nextTorque) - SAFE_TORQUE_LIMIT)
+  return {
+    score: overflow === 0 ? Math.abs(nextTorque) : 100 + overflow * 20 + Math.abs(nextTorque),
+    nextTorque,
+  }
+}
+
+function pickBalanceAiMove(
+  placements: PlacedWeight[],
+  availableWeights: number[],
+  opponentWeights: number[],
+  difficulty: AIDifficulty,
+) {
   const occupiedSlots = new Set(placements.map((placement) => placement.slot))
   const currentTorque = computeTorque(placements)
-  let bestMove:
-    | {
-        slot: SlotPosition
-        weight: number
-        score: number
-      }
-    | null = null
+  const candidateMoves: Array<{
+    slot: SlotPosition
+    weight: number
+    score: number
+    nextTorque: number
+  }> = []
 
   for (const weight of availableWeights) {
     for (const slot of SLOT_POSITIONS) {
@@ -78,22 +92,86 @@ function pickBalanceAiMove(placements: PlacedWeight[], availableWeights: number[
         continue
       }
 
-      const nextTorque = currentTorque + slot * weight
-      const overflow = Math.max(0, Math.abs(nextTorque) - SAFE_TORQUE_LIMIT)
-      const score = overflow === 0 ? Math.abs(nextTorque) : 100 + overflow * 20 + Math.abs(nextTorque)
+      const { score, nextTorque } = scoreBalanceMove(currentTorque, slot, weight)
+      candidateMoves.push({ slot, weight, score, nextTorque })
+    }
+  }
+
+  if (candidateMoves.length === 0) {
+    return null
+  }
+
+  if (difficulty === 'easy') {
+    const sortedByScore = [...candidateMoves].sort((a, b) => a.score - b.score)
+    const weakPool = sortedByScore.slice(Math.floor(sortedByScore.length / 2))
+    const choices = weakPool.length > 0 ? weakPool : sortedByScore
+    const randomMove = choices[Math.floor(Math.random() * choices.length)]
+
+    return {
+      slot: randomMove.slot,
+      weight: randomMove.weight,
+    }
+  }
+
+  if (difficulty === 'hard') {
+    let bestHardMove:
+      | {
+          slot: SlotPosition
+          weight: number
+          score: number
+          hardScore: number
+        }
+      | null = null
+
+    for (const candidate of candidateMoves) {
+      const remainingSlots = SLOT_POSITIONS.filter((slot) => !occupiedSlots.has(slot) && slot !== candidate.slot)
+      let opponentBestScore = Number.POSITIVE_INFINITY
+
+      for (const weight of opponentWeights) {
+        for (const slot of remainingSlots) {
+          const { score } = scoreBalanceMove(candidate.nextTorque, slot, weight)
+          if (score < opponentBestScore) {
+            opponentBestScore = score
+          }
+        }
+      }
+
+      const pressureScore = Number.isFinite(opponentBestScore) ? opponentBestScore : 180
+      const hardScore = pressureScore - candidate.score * 1.2
 
       if (
-        !bestMove ||
-        score < bestMove.score ||
-        (score === bestMove.score && Math.abs(slot) < Math.abs(bestMove.slot))
+        !bestHardMove ||
+        hardScore > bestHardMove.hardScore ||
+        (hardScore === bestHardMove.hardScore && candidate.score < bestHardMove.score) ||
+        (hardScore === bestHardMove.hardScore &&
+          candidate.score === bestHardMove.score &&
+          Math.abs(candidate.slot) < Math.abs(bestHardMove.slot))
       ) {
-        bestMove = { slot, weight, score }
+        bestHardMove = {
+          slot: candidate.slot,
+          weight: candidate.weight,
+          score: candidate.score,
+          hardScore,
+        }
+      }
+    }
+
+    if (bestHardMove) {
+      return {
+        slot: bestHardMove.slot,
+        weight: bestHardMove.weight,
       }
     }
   }
 
-  if (!bestMove) {
-    return null
+  let bestMove = candidateMoves[0]
+  for (const candidate of candidateMoves) {
+    if (
+      candidate.score < bestMove.score ||
+      (candidate.score === bestMove.score && Math.abs(candidate.slot) < Math.abs(bestMove.slot))
+    ) {
+      bestMove = candidate
+    }
   }
 
   return {
@@ -104,6 +182,7 @@ function pickBalanceAiMove(placements: PlacedWeight[], availableWeights: number[
 
 function Balance() {
   const [mode, setMode] = useState<GameMode>('local')
+  const [aiDifficulty, setAiDifficulty] = useState<AIDifficulty>('normal')
   const [placements, setPlacements] = useState<PlacedWeight[]>([])
   const [currentPlayer, setCurrentPlayer] = useState<Player>('A')
   const [startingPlayer, setStartingPlayer] = useState<Player>('A')
@@ -223,7 +302,7 @@ function Balance() {
       return
     }
 
-    const aiMove = pickBalanceAiMove(placements, weightPool.B)
+    const aiMove = pickBalanceAiMove(placements, weightPool.B, weightPool.A, aiDifficulty)
 
     if (!aiMove) {
       return
@@ -234,7 +313,7 @@ function Balance() {
     }, BALANCE_AI_DELAY_MS)
 
     return () => window.clearTimeout(aiTimer)
-  }, [isAiTurn, placeWeight, placements, weightPool])
+  }, [aiDifficulty, isAiTurn, placeWeight, placements, weightPool])
 
   const startNextRound = () => {
     if (!isRoundOver) {
@@ -289,6 +368,7 @@ function Balance() {
   return (
     <GameShell status={status} onReset={resetSession}>
       <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+      {mode === 'ai' && <GameDifficultyToggle difficulty={aiDifficulty} onDifficultyChange={setAiDifficulty} />}
 
       <div className="mb-3 grid grid-cols-2 gap-2 text-sm" aria-label="Balance session scoreboard">
         {(['A', 'B'] as const).map((player) => {

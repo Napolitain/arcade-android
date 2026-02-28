@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import GameDifficultyToggle, { type AIDifficulty } from './GameDifficultyToggle'
 import GameModeToggle, { type GameMode } from './GameModeToggle'
 import GameShell from './GameShell'
 
@@ -44,7 +45,29 @@ function getWinningMove(board: Mark[], mark: Exclude<Mark, null>): number | null
   return null
 }
 
-function getAiMove(board: Mark[]): number | null {
+function getAvailableMoves(board: Mark[]) {
+  const availableMoves: number[] = []
+
+  for (let index = 0; index < board.length; index += 1) {
+    if (!board[index]) {
+      availableMoves.push(index)
+    }
+  }
+
+  return availableMoves
+}
+
+function getRandomMove(board: Mark[]): number | null {
+  const availableMoves = getAvailableMoves(board)
+  if (availableMoves.length === 0) {
+    return null
+  }
+
+  const randomIndex = Math.floor(Math.random() * availableMoves.length)
+  return availableMoves[randomIndex] ?? null
+}
+
+function getNormalAiMove(board: Mark[]): number | null {
   const winningMove = getWinningMove(board, 'O')
   if (winningMove !== null) {
     return winningMove
@@ -66,6 +89,98 @@ function getAiMove(board: Mark[]): number | null {
 
   const openSide = SIDE_INDICES.find((index) => !board[index])
   return typeof openSide === 'number' ? openSide : null
+}
+
+function getEasyAiMove(board: Mark[]): number | null {
+  const randomMove = getRandomMove(board)
+  if (randomMove === null) {
+    return null
+  }
+
+  if (Math.random() < 0.7) {
+    return randomMove
+  }
+
+  return getNormalAiMove(board) ?? randomMove
+}
+
+function minimax(board: Mark[], isMaximizing: boolean, depth: number): number {
+  const winner = getWinner(board)
+  if (winner === 'O') {
+    return 10 - depth
+  }
+
+  if (winner === 'X') {
+    return depth - 10
+  }
+
+  const availableMoves = getAvailableMoves(board)
+  if (availableMoves.length === 0) {
+    return 0
+  }
+
+  if (isMaximizing) {
+    let bestScore = -Infinity
+
+    for (const move of availableMoves) {
+      board[move] = 'O'
+      const score = minimax(board, false, depth + 1)
+      board[move] = null
+      if (score > bestScore) {
+        bestScore = score
+      }
+    }
+
+    return bestScore
+  }
+
+  let bestScore = Infinity
+
+  for (const move of availableMoves) {
+    board[move] = 'X'
+    const score = minimax(board, true, depth + 1)
+    board[move] = null
+    if (score < bestScore) {
+      bestScore = score
+    }
+  }
+
+  return bestScore
+}
+
+function getHardAiMove(board: Mark[]): number | null {
+  const availableMoves = getAvailableMoves(board)
+  if (availableMoves.length === 0) {
+    return null
+  }
+
+  let bestScore = -Infinity
+  let bestMove = availableMoves[0] ?? null
+
+  for (const move of availableMoves) {
+    const nextBoard = [...board]
+    nextBoard[move] = 'O'
+    const score = minimax(nextBoard, false, 1)
+
+    if (score > bestScore) {
+      bestScore = score
+      bestMove = move
+    }
+  }
+
+  return bestMove
+}
+
+function getAiMove(board: Mark[], difficulty: AIDifficulty): number | null {
+  if (difficulty === 'easy') {
+    return getEasyAiMove(board)
+  }
+
+  if (difficulty === 'hard') {
+    return getHardAiMove(board)
+  }
+
+  return getNormalAiMove(board)
 }
 
 function AnimatedMark({ mark }: { mark: Exclude<Mark, null> }) {
@@ -110,6 +225,7 @@ function AnimatedMark({ mark }: { mark: Exclude<Mark, null> }) {
 
 function TicTacToe() {
   const [mode, setMode] = useState<GameMode>('local')
+  const [difficulty, setDifficulty] = useState<AIDifficulty>('normal')
   const [board, setBoard] = useState<Mark[]>(() => Array(9).fill(null))
   const [isXTurn, setIsXTurn] = useState(true)
 
@@ -129,7 +245,7 @@ function TicTacToe() {
       return
     }
 
-    const aiMove = getAiMove(board)
+    const aiMove = getAiMove(board, difficulty)
     if (aiMove === null) {
       return
     }
@@ -142,7 +258,7 @@ function TicTacToe() {
     }, 180)
 
     return () => window.clearTimeout(timer)
-  }, [board, isAiTurn])
+  }, [board, difficulty, isAiTurn])
 
   const resetGame = () => {
     setBoard(Array(9).fill(null))
@@ -176,6 +292,9 @@ function TicTacToe() {
   return (
     <GameShell status={statusText} onReset={handleReset}>
       <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+      {mode === 'ai' && (
+        <GameDifficultyToggle difficulty={difficulty} onDifficultyChange={setDifficulty} />
+      )}
       <div className="grid grid-cols-3 gap-3">
         {board.map((mark, index) => (
           <button

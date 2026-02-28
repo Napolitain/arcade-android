@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import GameShell from './GameShell'
 import GameModeToggle, { type GameMode } from './GameModeToggle'
+import GameDifficultyToggle, { type AIDifficulty } from './GameDifficultyToggle'
 
 type Player = 'A' | 'B'
 type EdgeOrientation = 'horizontal' | 'vertical'
@@ -145,6 +146,7 @@ const DOT_COORDINATES = Array.from({ length: DOTS_PER_SIDE * DOTS_PER_SIDE }, (_
 function chooseAiEdge(
   drawnEdges: Partial<Record<string, Player>>,
   claimedBoxes: Partial<Record<string, Player>>,
+  difficulty: AIDifficulty,
 ) {
   const availableEdges = EDGE_DEFINITIONS.filter((edge) => !drawnEdges[edge.id])
 
@@ -152,12 +154,17 @@ function chooseAiEdge(
     return null
   }
 
+  if (difficulty === 'easy') {
+    return availableEdges[Math.floor(Math.random() * availableEdges.length)] ?? null
+  }
+
   let bestCompletingEdge: { edge: EdgeDefinition; boxes: number } | null = null
   const safeEdges: EdgeDefinition[] = []
+  let hardFallbackEdge: { edge: EdgeDefinition; riskCount: number } | null = null
 
   for (const edge of availableEdges) {
     let completedBoxes = 0
-    let createsRisk = false
+    let riskCount = 0
 
     for (const boxId of edge.adjacentBoxes) {
       if (claimedBoxes[boxId]) {
@@ -173,7 +180,7 @@ function chooseAiEdge(
       if (drawnCount === 4) {
         completedBoxes += 1
       } else if (drawnCount === 3) {
-        createsRisk = true
+        riskCount += 1
       }
     }
 
@@ -188,13 +195,65 @@ function chooseAiEdge(
       continue
     }
 
-    if (!createsRisk) {
+    if (riskCount === 0) {
       safeEdges.push(edge)
+    } else if (
+      difficulty === 'hard' &&
+      (!hardFallbackEdge ||
+        riskCount < hardFallbackEdge.riskCount ||
+        (riskCount === hardFallbackEdge.riskCount && edge.id < hardFallbackEdge.edge.id))
+    ) {
+      hardFallbackEdge = { edge, riskCount }
     }
   }
 
   if (bestCompletingEdge) {
     return bestCompletingEdge.edge
+  }
+
+  if (difficulty === 'hard' && safeEdges.length > 0) {
+    let bestSafeEdge: { edge: EdgeDefinition; futureSafeEdges: number } | null = null
+
+    for (const edge of safeEdges) {
+      const simulatedDrawnEdges: Partial<Record<string, Player>> = { ...drawnEdges, [edge.id]: 'B' }
+      const futureSafeEdges = EDGE_DEFINITIONS.reduce((total, candidateEdge) => {
+        if (simulatedDrawnEdges[candidateEdge.id]) {
+          return total
+        }
+
+        const createsRisk = candidateEdge.adjacentBoxes.some((boxId) => {
+          if (claimedBoxes[boxId]) {
+            return false
+          }
+
+          const box = BOXES_BY_ID[boxId]
+          const drawnCount = box.edgeIds.reduce(
+            (count, edgeId) => count + (edgeId === candidateEdge.id || simulatedDrawnEdges[edgeId] ? 1 : 0),
+            0,
+          )
+
+          return drawnCount === 3
+        })
+
+        return total + (createsRisk ? 0 : 1)
+      }, 0)
+
+      if (
+        !bestSafeEdge ||
+        futureSafeEdges > bestSafeEdge.futureSafeEdges ||
+        (futureSafeEdges === bestSafeEdge.futureSafeEdges && edge.id < bestSafeEdge.edge.id)
+      ) {
+        bestSafeEdge = { edge, futureSafeEdges }
+      }
+    }
+
+    if (bestSafeEdge) {
+      return bestSafeEdge.edge
+    }
+  }
+
+  if (difficulty === 'hard' && hardFallbackEdge) {
+    return hardFallbackEdge.edge
   }
 
   const sortedFallback = (safeEdges.length > 0 ? safeEdges : availableEdges).sort((a, b) => a.id.localeCompare(b.id))
@@ -203,6 +262,7 @@ function chooseAiEdge(
 
 function DotsAndBoxes() {
   const [mode, setMode] = useState<GameMode>('local')
+  const [difficulty, setDifficulty] = useState<AIDifficulty>('normal')
   const [drawnEdges, setDrawnEdges] = useState<Partial<Record<string, Player>>>({})
   const [claimedBoxes, setClaimedBoxes] = useState<Partial<Record<string, Player>>>({})
   const [currentPlayer, setCurrentPlayer] = useState<Player>('A')
@@ -292,7 +352,7 @@ function DotsAndBoxes() {
     }
 
     const timeout = setTimeout(() => {
-      const edge = chooseAiEdge(drawnEdges, claimedBoxes)
+      const edge = chooseAiEdge(drawnEdges, claimedBoxes, difficulty)
 
       if (edge) {
         handleEdgeSelect(edge, true)
@@ -300,7 +360,7 @@ function DotsAndBoxes() {
     }, 260)
 
     return () => clearTimeout(timeout)
-  }, [claimedBoxes, drawnEdges, handleEdgeSelect, isAiTurn])
+  }, [claimedBoxes, difficulty, drawnEdges, handleEdgeSelect, isAiTurn])
 
   const resetGame = () => {
     setDrawnEdges({})
@@ -330,6 +390,7 @@ function DotsAndBoxes() {
   return (
     <GameShell status={statusText} onReset={handleReset}>
       <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+      {mode === 'ai' && <GameDifficultyToggle difficulty={difficulty} onDifficultyChange={setDifficulty} />}
 
       <div className="mb-3 grid grid-cols-2 gap-2">
         <div

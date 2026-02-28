@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
 import GameModeToggle, { type GameMode } from './GameModeToggle'
+import GameDifficultyToggle, { type AIDifficulty } from './GameDifficultyToggle'
 
 type PieceColor = 'B' | 'R'
 type Piece = {
@@ -199,7 +200,15 @@ function countKings(board: Array<Piece | null>, player: PieceColor) {
   return board.reduce((total, piece) => (piece?.color === player && piece.king ? total + 1 : total), 0)
 }
 
-function chooseAiMove(board: Array<Piece | null>, legalMoves: Move[]) {
+function chooseAiMove(board: Array<Piece | null>, legalMoves: Move[], difficulty: AIDifficulty) {
+  if (legalMoves.length === 0) {
+    return null
+  }
+
+  if (difficulty === 'easy') {
+    return legalMoves[Math.floor(Math.random() * legalMoves.length)] ?? null
+  }
+
   let bestMove: { move: Move; score: number } | null = null
 
   for (const move of legalMoves) {
@@ -211,7 +220,31 @@ function chooseAiMove(board: Array<Piece | null>, legalMoves: Move[]) {
 
     const { row: destinationRow } = getCoordinates(move.to)
     const promotes = shouldPromote(piece, destinationRow)
-    const score = move.captured.length * 100 + (promotes ? 20 : 0)
+    let score = move.captured.length * 100 + (promotes ? 20 : 0)
+
+    if (difficulty === 'hard') {
+      const nextBoard = [...board]
+      nextBoard[move.from] = null
+      move.captured.forEach((capturedIndex) => {
+        nextBoard[capturedIndex] = null
+      })
+      nextBoard[move.to] = promotes ? { ...piece, king: true } : piece
+
+      const continuationCaptures = move.captured.length > 0 ? getCaptureMovesForPiece(nextBoard, move.to).length : 0
+      const opponentMoves = getLegalMoves(nextBoard, getOpponent(piece.color), null)
+      const opponentCaptureMoves = opponentMoves.filter((candidateMove) => candidateMove.captured.length > 0)
+      const isExposedToCapture = opponentCaptureMoves.some((candidateMove) => candidateMove.captured.includes(move.to))
+      const advancement = piece.king ? 0 : piece.color === 'B' ? destinationRow : BOARD_SIZE - 1 - destinationRow
+
+      score =
+        move.captured.length * 140 +
+        (promotes ? 70 : 0) +
+        continuationCaptures * 45 +
+        advancement * 3 -
+        opponentMoves.length * 3 -
+        opponentCaptureMoves.length * 35 -
+        (isExposedToCapture ? 60 : 0)
+    }
 
     if (!bestMove || score > bestMove.score || (score === bestMove.score && move.to < bestMove.move.to)) {
       bestMove = { move, score }
@@ -247,6 +280,7 @@ function CheckersPiece({ piece, animate }: { piece: Piece; animate: boolean }) {
 
 function Checkers() {
   const [mode, setMode] = useState<GameMode>('local')
+  const [difficulty, setDifficulty] = useState<AIDifficulty>('normal')
   const [board, setBoard] = useState<Array<Piece | null>>(() => createInitialBoard())
   const [currentPlayer, setCurrentPlayer] = useState<PieceColor>('B')
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
@@ -412,7 +446,7 @@ function Checkers() {
     }
 
     const timeout = setTimeout(() => {
-      const aiMove = chooseAiMove(board, legalMoves)
+      const aiMove = chooseAiMove(board, legalMoves, difficulty)
 
       if (aiMove) {
         applyMove(aiMove)
@@ -420,7 +454,7 @@ function Checkers() {
     }, 280)
 
     return () => clearTimeout(timeout)
-  }, [applyMove, board, isAiTurn, legalMoves])
+  }, [applyMove, board, difficulty, isAiTurn, legalMoves])
 
   const resetGame = () => {
     setBoard(createInitialBoard())
@@ -448,6 +482,7 @@ function Checkers() {
   return (
     <GameShell status={statusText} onReset={handleReset} scoreLabel="Moves" scoreValue={moveCount}>
       <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+      {mode === 'ai' && <GameDifficultyToggle difficulty={difficulty} onDifficultyChange={setDifficulty} />}
 
       <p id={boardInstructionsId} className="sr-only">
         Select one of your movable pieces, then choose a highlighted destination square. Captures are mandatory,

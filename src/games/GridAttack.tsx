@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import GameDifficultyToggle, { type AIDifficulty } from './GameDifficultyToggle'
 import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type ShotResult = 'hit' | 'miss'
@@ -150,6 +151,191 @@ function getRandomUntargetedCell(shots: ShotMap) {
   return available[Math.floor(Math.random() * available.length)]
 }
 
+function getUntargetedCells(shots: ShotMap) {
+  const cells: number[] = []
+
+  for (let index = 0; index < CELL_COUNT; index += 1) {
+    if (!shots[index]) {
+      cells.push(index)
+    }
+  }
+
+  return cells
+}
+
+function getOrthogonalNeighbors(index: number) {
+  const row = Math.floor(index / GRID_SIZE)
+  const column = index % GRID_SIZE
+  const neighbors: number[] = []
+
+  if (row > 0) {
+    neighbors.push(getCellIndex(row - 1, column))
+  }
+  if (row < GRID_SIZE - 1) {
+    neighbors.push(getCellIndex(row + 1, column))
+  }
+  if (column > 0) {
+    neighbors.push(getCellIndex(row, column - 1))
+  }
+  if (column < GRID_SIZE - 1) {
+    neighbors.push(getCellIndex(row, column + 1))
+  }
+
+  return neighbors
+}
+
+function getTargetNeighbors(shots: ShotMap, hitCells: number[]) {
+  const candidates = new Set<number>()
+
+  hitCells.forEach((cell) => {
+    getOrthogonalNeighbors(cell).forEach((neighbor) => {
+      if (!shots[neighbor]) {
+        candidates.add(neighbor)
+      }
+    })
+  })
+
+  return [...candidates]
+}
+
+function getHardFocusTargets(shots: ShotMap, hitCells: number[]) {
+  const focused = new Set<number>()
+  const rowGroups = new Map<number, number[]>()
+  const columnGroups = new Map<number, number[]>()
+
+  hitCells.forEach((cell) => {
+    const row = Math.floor(cell / GRID_SIZE)
+    const column = cell % GRID_SIZE
+    const rowValues = rowGroups.get(row)
+    const columnValues = columnGroups.get(column)
+
+    if (rowValues) {
+      rowValues.push(column)
+    } else {
+      rowGroups.set(row, [column])
+    }
+
+    if (columnValues) {
+      columnValues.push(row)
+    } else {
+      columnGroups.set(column, [row])
+    }
+  })
+
+  rowGroups.forEach((columns, row) => {
+    if (columns.length < 2) {
+      return
+    }
+
+    const ordered = [...columns].sort((a, b) => a - b)
+    const left = ordered[0] - 1
+    const right = ordered[ordered.length - 1] + 1
+
+    if (left >= 0) {
+      const index = getCellIndex(row, left)
+      if (!shots[index]) {
+        focused.add(index)
+      }
+    }
+    if (right < GRID_SIZE) {
+      const index = getCellIndex(row, right)
+      if (!shots[index]) {
+        focused.add(index)
+      }
+    }
+  })
+
+  columnGroups.forEach((rows, column) => {
+    if (rows.length < 2) {
+      return
+    }
+
+    const ordered = [...rows].sort((a, b) => a - b)
+    const top = ordered[0] - 1
+    const bottom = ordered[ordered.length - 1] + 1
+
+    if (top >= 0) {
+      const index = getCellIndex(top, column)
+      if (!shots[index]) {
+        focused.add(index)
+      }
+    }
+    if (bottom < GRID_SIZE) {
+      const index = getCellIndex(bottom, column)
+      if (!shots[index]) {
+        focused.add(index)
+      }
+    }
+  })
+
+  return [...focused]
+}
+
+function pickCpuTargetCell(shots: ShotMap, targetShips: ShipState[], difficulty: AIDifficulty) {
+  if (difficulty === 'easy') {
+    return getRandomUntargetedCell(shots)
+  }
+
+  const untargetedCells = getUntargetedCells(shots)
+
+  if (untargetedCells.length === 0) {
+    return null
+  }
+
+  const sunkCells = getSunkCells(targetShips)
+  const activeHits: number[] = []
+
+  for (let index = 0; index < CELL_COUNT; index += 1) {
+    if (shots[index] === 'hit' && !sunkCells.has(index)) {
+      activeHits.push(index)
+    }
+  }
+
+  const targetNeighbors = getTargetNeighbors(shots, activeHits)
+
+  if (difficulty === 'normal') {
+    if (targetNeighbors.length > 0) {
+      return targetNeighbors[Math.floor(Math.random() * targetNeighbors.length)]
+    }
+
+    return untargetedCells[Math.floor(Math.random() * untargetedCells.length)]
+  }
+
+  const focusTargets = getHardFocusTargets(shots, activeHits)
+
+  if (focusTargets.length > 0) {
+    return focusTargets[Math.floor(Math.random() * focusTargets.length)]
+  }
+
+  if (targetNeighbors.length > 0) {
+    const rankedNeighbors = [...targetNeighbors].sort((left, right) => {
+      const leftOptions = getOrthogonalNeighbors(left).filter((cell) => !shots[cell]).length
+      const rightOptions = getOrthogonalNeighbors(right).filter((cell) => !shots[cell]).length
+      return rightOptions - leftOptions
+    })
+    return rankedNeighbors[0]
+  }
+
+  const parityTargets = untargetedCells.filter((cell) => {
+    const row = Math.floor(cell / GRID_SIZE)
+    const column = cell % GRID_SIZE
+    return (row + column) % 2 === 0
+  })
+  const huntTargets = parityTargets.length > 0 ? parityTargets : untargetedCells
+  const center = (GRID_SIZE - 1) / 2
+
+  return [...huntTargets].sort((left, right) => {
+    const leftRow = Math.floor(left / GRID_SIZE)
+    const leftColumn = left % GRID_SIZE
+    const rightRow = Math.floor(right / GRID_SIZE)
+    const rightColumn = right % GRID_SIZE
+    const leftDistance = Math.abs(leftRow - center) + Math.abs(leftColumn - center)
+    const rightDistance = Math.abs(rightRow - center) + Math.abs(rightColumn - center)
+
+    return leftDistance - rightDistance
+  })[0]
+}
+
 function getShipCells(ships: ShipState[]) {
   return new Set(ships.flatMap((ship) => ship.cells))
 }
@@ -237,6 +423,7 @@ function StatItem({ label, value }: { label: string; value: string }) {
 
 function GridAttack() {
   const [mode, setMode] = useState<GameMode>('ai')
+  const [aiDifficulty, setAiDifficulty] = useState<AIDifficulty>('normal')
   const [battleState, setBattleState] = useState<BattleState>(() => createBattleState(0, 'ai'))
 
   useEffect(() => {
@@ -250,7 +437,7 @@ function GridAttack() {
           return currentState
         }
 
-        const targetCell = getRandomUntargetedCell(currentState.cpuShots)
+        const targetCell = pickCpuTargetCell(currentState.cpuShots, currentState.playerShips, aiDifficulty)
 
         if (targetCell === null) {
           return { ...currentState, turn: 'player', lastEvent: 'CPU has no valid targets left.' }
@@ -286,7 +473,7 @@ function GridAttack() {
     }, CPU_DELAY_MS)
 
     return () => window.clearTimeout(cpuTurnTimer)
-  }, [battleState.turn, battleState.winner, mode])
+  }, [aiDifficulty, battleState.turn, battleState.winner, mode])
 
   const playerShipCells = useMemo(() => getShipCells(battleState.playerShips), [battleState.playerShips])
   const playerSunkCells = useMemo(() => getSunkCells(battleState.playerShips), [battleState.playerShips])
@@ -426,6 +613,7 @@ function GridAttack() {
       scoreValue={battleState.playerWins}
     >
       <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+      {mode === 'ai' && <GameDifficultyToggle difficulty={aiDifficulty} onDifficultyChange={setAiDifficulty} />}
 
       <p id={enemyBoardInstructionsId} className="sr-only">
         {mode === 'ai'

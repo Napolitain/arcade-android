@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import GameDifficultyToggle, { type AIDifficulty } from './GameDifficultyToggle'
 import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type Player = 'B' | 'O'
@@ -193,23 +194,111 @@ function resolveTurn(board: Cell[], candidatePlayer: Player) {
   }
 }
 
-function pickTakeoverAiMove(board: Cell[], legalMoves: Move[], player: Player) {
+function scoreTakeoverMove(board: Cell[], move: Move, player: Player) {
+  const appliedMove = applyMove(board, move, player)
+
+  if (!appliedMove) {
+    return null
+  }
+
+  const opponent = getOpponent(player)
+  const conversionScore = appliedMove.converted.length * 4
+  const cloneBonus = move.kind === 'clone' ? 2 : 0
+  const boardControlScore = countPieces(appliedMove.nextBoard, player) - countPieces(appliedMove.nextBoard, opponent)
+
+  return {
+    score: conversionScore + cloneBonus + boardControlScore * 0.1,
+    nextBoard: appliedMove.nextBoard,
+  }
+}
+
+function pickTakeoverAiMove(board: Cell[], legalMoves: Move[], player: Player, difficulty: AIDifficulty) {
+  const scoredMoves = legalMoves
+    .map((move) => {
+      const evaluation = scoreTakeoverMove(board, move, player)
+
+      if (!evaluation) {
+        return null
+      }
+
+      return {
+        move,
+        score: evaluation.score,
+        nextBoard: evaluation.nextBoard,
+      }
+    })
+    .filter(
+      (
+        value,
+      ): value is {
+        move: Move
+        score: number
+        nextBoard: Cell[]
+      } => value !== null,
+    )
+
+  if (scoredMoves.length === 0) {
+    return legalMoves[0] ?? null
+  }
+
+  if (difficulty === 'easy') {
+    const weakestFirst = [...scoredMoves].sort((a, b) => a.score - b.score)
+    const weakerHalf = weakestFirst.slice(0, Math.max(1, Math.ceil(weakestFirst.length / 2)))
+    return weakerHalf[Math.floor(Math.random() * weakerHalf.length)].move
+  }
+
+  if (difficulty === 'hard') {
+    let bestMove: Move | null = null
+    let bestHardScore = Number.NEGATIVE_INFINITY
+    let bestBaselineScore = Number.NEGATIVE_INFINITY
+
+    scoredMoves.forEach(({ move, score, nextBoard }) => {
+      const opponent = getOpponent(player)
+      const opponentMoves = getLegalMoves(nextBoard, opponent)
+      const ownMobility = getLegalMoves(nextBoard, player).length
+      const opponentMobility = opponentMoves.length
+      let opponentBestReply = 0
+
+      opponentMoves.forEach((replyMove) => {
+        const replyEvaluation = scoreTakeoverMove(nextBoard, replyMove, opponent)
+        if (replyEvaluation && replyEvaluation.score > opponentBestReply) {
+          opponentBestReply = replyEvaluation.score
+        }
+      })
+
+      const turnState = resolveTurn(nextBoard, opponent)
+      let terminalBonus = 0
+
+      if (turnState.isGameOver) {
+        const playerCount = countPieces(nextBoard, player)
+        const opponentCount = countPieces(nextBoard, opponent)
+        terminalBonus = playerCount > opponentCount ? 500 : playerCount < opponentCount ? -500 : 0
+      }
+
+      const hardScore =
+        score * 1.4 +
+        (ownMobility - opponentMobility) * 0.35 -
+        opponentBestReply * 0.9 +
+        (opponentMoves.length === 0 ? 8 : 0) +
+        terminalBonus
+
+      if (
+        hardScore > bestHardScore ||
+        (hardScore === bestHardScore && score > bestBaselineScore)
+      ) {
+        bestHardScore = hardScore
+        bestBaselineScore = score
+        bestMove = move
+      }
+    })
+
+    return bestMove ?? scoredMoves[0].move
+  }
+
   let bestMove: Move | null = null
   let bestScore = Number.NEGATIVE_INFINITY
-  const opponent = getOpponent(player)
 
-  legalMoves.forEach((move) => {
-    const appliedMove = applyMove(board, move, player)
-
-    if (!appliedMove) {
-      return
-    }
-
-    const conversionScore = appliedMove.converted.length * 4
-    const cloneBonus = move.kind === 'clone' ? 2 : 0
-    const boardControlScore = countPieces(appliedMove.nextBoard, player) - countPieces(appliedMove.nextBoard, opponent)
-    const score = conversionScore + cloneBonus + boardControlScore * 0.1
-
+  scoredMoves.forEach(({ move, score }) => {
     if (score > bestScore) {
       bestScore = score
       bestMove = move
@@ -242,6 +331,7 @@ function TakeoverToken({ player, animation }: { player: Player; animation: Token
 
 function Takeover() {
   const [mode, setMode] = useState<GameMode>('local')
+  const [aiDifficulty, setAiDifficulty] = useState<AIDifficulty>('normal')
   const [board, setBoard] = useState<Cell[]>(() => createInitialBoard())
   const [currentPlayer, setCurrentPlayer] = useState<Player>('B')
   const [selectedSource, setSelectedSource] = useState<number | null>(null)
@@ -370,7 +460,7 @@ function Takeover() {
       return
     }
 
-    const aiMove = pickTakeoverAiMove(board, legalMoves, 'O')
+    const aiMove = pickTakeoverAiMove(board, legalMoves, 'O', aiDifficulty)
 
     if (!aiMove) {
       return
@@ -395,7 +485,7 @@ function Takeover() {
     }, TAKEOVER_AI_DELAY_MS)
 
     return () => window.clearTimeout(aiTimer)
-  }, [board, isAiTurn, legalMoves])
+  }, [aiDifficulty, board, isAiTurn, legalMoves])
 
   const resetGame = () => {
     setBoard(createInitialBoard())
@@ -424,6 +514,7 @@ function Takeover() {
   return (
     <GameShell status={statusText} onReset={handleReset}>
       <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+      {mode === 'ai' && <GameDifficultyToggle difficulty={aiDifficulty} onDifficultyChange={setAiDifficulty} />}
 
       <p id={boardInstructionsId} className="sr-only">
         Select one of your highlighted tokens, then select a highlighted empty cell within one or two squares to clone or jump.
