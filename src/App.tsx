@@ -3,11 +3,21 @@ import type { ComponentType } from 'react'
 import ConnectFour from './games/ConnectFour'
 import DotsAndBoxes from './games/DotsAndBoxes'
 import Game2048 from './games/Game2048'
+import GridAttack from './games/GridAttack'
 import Reversi from './games/Reversi'
 import SnakeGame from './games/SnakeGame'
 import TicTacToe from './games/TicTacToe'
+import WordBalloon from './games/WordBalloon'
 
-type GameId = 'tic-tac-toe' | 'connect-four' | 'game-2048' | 'snake' | 'reversi' | 'dots-and-boxes'
+type GameId =
+  | 'tic-tac-toe'
+  | 'connect-four'
+  | 'game-2048'
+  | 'snake'
+  | 'reversi'
+  | 'dots-and-boxes'
+  | 'word-balloon'
+  | 'grid-attack'
 
 type GameDefinition = {
   id: GameId
@@ -52,6 +62,18 @@ const GAMES: ReadonlyArray<GameDefinition> = [
     name: 'Dots and Boxes',
     description: 'Draw edges, close boxes, and chain extra turns.',
     Component: DotsAndBoxes,
+  },
+  {
+    id: 'word-balloon',
+    name: 'Word Balloon',
+    description: 'Guess letters before the balloon pops.',
+    Component: WordBalloon,
+  },
+  {
+    id: 'grid-attack',
+    name: 'Grid Attack',
+    description: 'Hunt enemy ships in a tactical sea battle.',
+    Component: GridAttack,
   },
 ]
 

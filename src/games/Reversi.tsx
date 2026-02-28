@@ -172,6 +172,7 @@ function Reversi() {
   const whiteCount = useMemo(() => countDiscs(board, 'W'), [board])
   const legalMoves = useMemo(() => new Set(getLegalMoves(board, currentPlayer)), [board, currentPlayer])
   const lastFlippedLookup = useMemo(() => new Set(lastFlippedIndices), [lastFlippedIndices])
+  const legalMoveCount = legalMoves.size
 
   const winner = useMemo(() => {
     if (!isGameOver || blackCount === whiteCount) {
@@ -181,12 +182,14 @@ function Reversi() {
     return blackCount > whiteCount ? 'B' : 'W'
   }, [blackCount, whiteCount, isGameOver])
 
+  const activePlayerLabel = getPlayerLabel(currentPlayer)
   const statusText = isGameOver
     ? winner
       ? `Game over! ${getPlayerLabel(winner)} wins.`
       : "Game over! It's a tie."
-    : passMessage ??
-      `Turn: ${getPlayerLabel(currentPlayer)} (${legalMoves.size} legal move${legalMoves.size === 1 ? '' : 's'})`
+    : passMessage
+      ? `Pass: ${passMessage} ${activePlayerLabel} to move (${legalMoveCount} legal move${legalMoveCount === 1 ? '' : 's'}).`
+      : `${activePlayerLabel} to move (${legalMoveCount} legal move${legalMoveCount === 1 ? '' : 's'}).`
 
   const boardInstructionsId = 'reversi-board-instructions'
 
@@ -244,25 +247,73 @@ function Reversi() {
         Place discs on highlighted cells to capture lines of your opponent&apos;s discs.
       </p>
 
-      <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
-        <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2">
-          <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-slate-950 ring-1 ring-slate-500" aria-hidden="true" />
-            Black
-          </span>
-          <span className="font-semibold text-cyan-100">{blackCount}</span>
+      <div className="mb-3 grid grid-cols-2 gap-2 text-sm" aria-label="Scoreboard">
+        <div
+          className={`rounded-lg border px-3 py-2 transition ${
+            !isGameOver && currentPlayer === 'B'
+              ? 'motion-tile-pop border-cyan-300 bg-cyan-500/15 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]'
+              : 'border-slate-700 bg-slate-800/80'
+          }`}
+          aria-label={`Black has ${blackCount} discs${!isGameOver && currentPlayer === 'B' ? ', active player' : ''}`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-slate-950 ring-1 ring-slate-500" aria-hidden="true" />
+              Black
+            </span>
+            <span className="font-semibold text-cyan-100">{blackCount}</span>
+          </div>
+          <p className={`mt-1 text-[0.65rem] uppercase tracking-wide ${!isGameOver && currentPlayer === 'B' ? 'text-cyan-200' : 'text-slate-400'}`}>
+            {!isGameOver && currentPlayer === 'B' ? 'To move' : 'Waiting'}
+          </p>
         </div>
-        <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2">
-          <span className="inline-flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-slate-100 ring-1 ring-slate-300" aria-hidden="true" />
-            White
-          </span>
-          <span className="font-semibold text-cyan-100">{whiteCount}</span>
+        <div
+          className={`rounded-lg border px-3 py-2 transition ${
+            !isGameOver && currentPlayer === 'W'
+              ? 'motion-tile-pop border-cyan-300 bg-cyan-500/15 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]'
+              : 'border-slate-700 bg-slate-800/80'
+          }`}
+          aria-label={`White has ${whiteCount} discs${!isGameOver && currentPlayer === 'W' ? ', active player' : ''}`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-slate-100 ring-1 ring-slate-300" aria-hidden="true" />
+              White
+            </span>
+            <span className="font-semibold text-cyan-100">{whiteCount}</span>
+          </div>
+          <p className={`mt-1 text-[0.65rem] uppercase tracking-wide ${!isGameOver && currentPlayer === 'W' ? 'text-cyan-200' : 'text-slate-400'}`}>
+            {!isGameOver && currentPlayer === 'W' ? 'To move' : 'Waiting'}
+          </p>
         </div>
       </div>
 
+      {passMessage && !isGameOver && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="mb-3 rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100"
+        >
+          Pass turn: {passMessage}
+        </p>
+      )}
+
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="relative inline-flex h-3.5 w-3.5 items-center justify-center" aria-hidden="true">
+            <span className="absolute inset-0 rounded-full border border-cyan-200/80" />
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-200" />
+          </span>
+          Legal move
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3.5 w-3.5 rounded-sm border border-amber-300/80" aria-hidden="true" />
+          Last move
+        </span>
+      </div>
+
       <div
-        className="touch-manipulation grid grid-cols-8 gap-1 rounded-xl border border-slate-700/70 bg-emerald-950/40 p-2 sm:gap-1.5 sm:p-3"
+        className="touch-manipulation grid grid-cols-8 gap-1 rounded-xl border border-slate-700/70 bg-emerald-950/40 p-2 select-none sm:gap-1.5 sm:p-3"
         role="grid"
         aria-label="Reversi board"
         aria-describedby={boardInstructionsId}
@@ -271,8 +322,9 @@ function Reversi() {
           const row = Math.floor(index / BOARD_SIZE)
           const column = index % BOARD_SIZE
           const isLegalMove = legalMoves.has(index) && !isGameOver
+          const isLastPlaced = index === lastPlacedIndex
           const isFlipped = lastFlippedLookup.has(index)
-          const animation: DiscAnimation = index === lastPlacedIndex ? 'place' : isFlipped ? 'flip' : null
+          const animation: DiscAnimation = isLastPlaced ? 'place' : isFlipped ? 'flip' : null
           const occupancyLabel =
             disc === 'B' ? 'occupied by Black' : disc === 'W' ? 'occupied by White' : 'empty'
 
@@ -282,19 +334,39 @@ function Reversi() {
               type="button"
               onClick={() => handleCellClick(index)}
               disabled={!isLegalMove}
-              aria-label={`Row ${row + 1}, column ${column + 1}, ${occupancyLabel}${isLegalMove ? ', legal move' : ''}`}
+              title={
+                isLegalMove
+                  ? `Play at row ${row + 1}, column ${column + 1}`
+                  : isLastPlaced
+                    ? 'Last played cell'
+                    : `${occupancyLabel[0].toUpperCase()}${occupancyLabel.slice(1)}`
+              }
+              aria-label={`Row ${row + 1}, column ${column + 1}, ${occupancyLabel}${isLastPlaced ? ', last played cell' : ''}${isLegalMove ? `, legal move for ${activePlayerLabel}` : ''}`}
               aria-describedby={boardInstructionsId}
               className={`motion-control-press touch-manipulation relative aspect-square rounded-md border p-0.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed ${
                 isLegalMove
-                  ? 'border-cyan-400/80 bg-emerald-700/40 hover:border-cyan-300 hover:bg-emerald-700/55'
-                  : 'border-emerald-900/70 bg-emerald-900/45'
+                  ? 'border-cyan-300/90 bg-emerald-700/50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.2)] hover:border-cyan-200 hover:bg-emerald-700/60'
+                  : isLastPlaced
+                    ? 'border-amber-300/70 bg-emerald-900/60'
+                    : 'border-emerald-900/70 bg-emerald-900/45'
               }`}
             >
+              {isLastPlaced && (
+                <span
+                  className="motion-click-pulse pointer-events-none absolute inset-1 rounded-[0.45rem] border-2 border-amber-300/80 shadow-[0_0_10px_rgba(252,211,77,0.45)]"
+                  aria-hidden="true"
+                />
+              )}
               <span className="flex h-full w-full items-center justify-center">
                 {disc ? (
                   <ReversiDisc disc={disc} animation={animation} />
                 ) : (
-                  isLegalMove && <span className="h-2.5 w-2.5 rounded-full bg-cyan-300/80" aria-hidden="true" />
+                  isLegalMove && (
+                    <span className="relative flex h-4 w-4 items-center justify-center sm:h-5 sm:w-5" aria-hidden="true">
+                      <span className="motion-tile-pop absolute inset-0 rounded-full border border-cyan-100/80" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-cyan-200 shadow-[0_0_10px_rgba(103,232,249,0.75)]" />
+                    </span>
+                  )
                 )}
               </span>
             </button>
