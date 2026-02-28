@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import type { ComponentType } from 'react'
+import Balance from './games/Balance'
+import Checkers from './games/Checkers'
 import ConnectFour from './games/ConnectFour'
 import DotsAndBoxes from './games/DotsAndBoxes'
 import Game2048 from './games/Game2048'
 import GridAttack from './games/GridAttack'
 import Reversi from './games/Reversi'
 import SnakeGame from './games/SnakeGame'
+import Takeover from './games/Takeover'
 import TicTacToe from './games/TicTacToe'
 import WordBalloon from './games/WordBalloon'
 
@@ -18,6 +21,9 @@ type GameId =
   | 'dots-and-boxes'
   | 'word-balloon'
   | 'grid-attack'
+  | 'checkers'
+  | 'balance'
+  | 'takeover'
 
 type GameDefinition = {
   id: GameId
@@ -74,6 +80,24 @@ const GAMES: ReadonlyArray<GameDefinition> = [
     name: 'Grid Attack',
     description: 'Hunt enemy ships in a tactical sea battle.',
     Component: GridAttack,
+  },
+  {
+    id: 'checkers',
+    name: 'Checkers',
+    description: 'Capture diagonally, chain jumps, and crown kings.',
+    Component: Checkers,
+  },
+  {
+    id: 'balance',
+    name: 'Balance',
+    description: 'Place weighted pieces and keep the beam stable.',
+    Component: Balance,
+  },
+  {
+    id: 'takeover',
+    name: 'Takeover',
+    description: 'Expand, jump, and convert nearby enemy tokens.',
+    Component: Takeover,
   },
 ]
 
