@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import GameShell from './GameShell'
+import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type Player = 'A' | 'B'
 type EdgeOrientation = 'horizontal' | 'vertical'
@@ -141,7 +142,67 @@ const DOT_COORDINATES = Array.from({ length: DOTS_PER_SIDE * DOTS_PER_SIDE }, (_
   }
 })
 
+function chooseAiEdge(
+  drawnEdges: Partial<Record<string, Player>>,
+  claimedBoxes: Partial<Record<string, Player>>,
+) {
+  const availableEdges = EDGE_DEFINITIONS.filter((edge) => !drawnEdges[edge.id])
+
+  if (availableEdges.length === 0) {
+    return null
+  }
+
+  let bestCompletingEdge: { edge: EdgeDefinition; boxes: number } | null = null
+  const safeEdges: EdgeDefinition[] = []
+
+  for (const edge of availableEdges) {
+    let completedBoxes = 0
+    let createsRisk = false
+
+    for (const boxId of edge.adjacentBoxes) {
+      if (claimedBoxes[boxId]) {
+        continue
+      }
+
+      const box = BOXES_BY_ID[boxId]
+      const drawnCount = box.edgeIds.reduce(
+        (count, edgeId) => count + (edgeId === edge.id || drawnEdges[edgeId] ? 1 : 0),
+        0,
+      )
+
+      if (drawnCount === 4) {
+        completedBoxes += 1
+      } else if (drawnCount === 3) {
+        createsRisk = true
+      }
+    }
+
+    if (completedBoxes > 0) {
+      if (
+        !bestCompletingEdge ||
+        completedBoxes > bestCompletingEdge.boxes ||
+        (completedBoxes === bestCompletingEdge.boxes && edge.id < bestCompletingEdge.edge.id)
+      ) {
+        bestCompletingEdge = { edge, boxes: completedBoxes }
+      }
+      continue
+    }
+
+    if (!createsRisk) {
+      safeEdges.push(edge)
+    }
+  }
+
+  if (bestCompletingEdge) {
+    return bestCompletingEdge.edge
+  }
+
+  const sortedFallback = (safeEdges.length > 0 ? safeEdges : availableEdges).sort((a, b) => a.id.localeCompare(b.id))
+  return sortedFallback[0] ?? null
+}
+
 function DotsAndBoxes() {
+  const [mode, setMode] = useState<GameMode>('local')
   const [drawnEdges, setDrawnEdges] = useState<Partial<Record<string, Player>>>({})
   const [claimedBoxes, setClaimedBoxes] = useState<Partial<Record<string, Player>>>({})
   const [currentPlayer, setCurrentPlayer] = useState<Player>('A')
@@ -154,6 +215,8 @@ function DotsAndBoxes() {
   const drawnEdgeCount = Object.keys(drawnEdges).length
   const edgesRemaining = EDGE_DEFINITIONS.length - drawnEdgeCount
   const isGameOver = edgesRemaining === 0
+  const isAiTurn = mode === 'ai' && !isGameOver && currentPlayer === 'B'
+  const playerBLabel = mode === 'ai' ? 'Player B (AI)' : 'Player B'
 
   let statusText = `Turn: Player ${currentPlayer}. ${edgesRemaining} edge${edgesRemaining === 1 ? '' : 's'} left.`
 
@@ -166,48 +229,53 @@ function DotsAndBoxes() {
       const losingScore = Math.min(scoreA, scoreB)
       statusText = `Game over! Player ${winningPlayer} wins ${winningScore}-${losingScore}.`
     }
+  } else if (isAiTurn) {
+    statusText = `${playerBLabel} is thinking. ${edgesRemaining} edge${edgesRemaining === 1 ? '' : 's'} left.`
   }
 
-  const handleEdgeSelect = (edge: EdgeDefinition) => {
-    if (isGameOver || drawnEdges[edge.id]) {
-      return
-    }
-
-    const nextDrawnEdges: Partial<Record<string, Player>> = {
-      ...drawnEdges,
-      [edge.id]: currentPlayer,
-    }
-
-    const completedBoxIds = edge.adjacentBoxes.filter((boxId) => {
-      if (claimedBoxes[boxId]) {
-        return false
+  const handleEdgeSelect = useCallback(
+    (edge: EdgeDefinition, initiatedByAi = false) => {
+      if (isGameOver || drawnEdges[edge.id] || (isAiTurn && !initiatedByAi)) {
+        return
       }
 
-      const box = BOXES_BY_ID[boxId]
-      return box.edgeIds.every((edgeId) => Boolean(nextDrawnEdges[edgeId]))
-    })
+      const nextDrawnEdges: Partial<Record<string, Player>> = {
+        ...drawnEdges,
+        [edge.id]: currentPlayer,
+      }
 
-    setDrawnEdges(nextDrawnEdges)
-    setLastEdgeId(edge.id)
-    setHoveredEdgeId(null)
+      const completedBoxIds = edge.adjacentBoxes.filter((boxId) => {
+        if (claimedBoxes[boxId]) {
+          return false
+        }
 
-    if (completedBoxIds.length === 0) {
-      setCurrentPlayer((player) => (player === 'A' ? 'B' : 'A'))
-      setLastClaimedBoxIds([])
-      return
-    }
-
-    setClaimedBoxes((currentBoxes) => {
-      const nextBoxes: Partial<Record<string, Player>> = { ...currentBoxes }
-
-      completedBoxIds.forEach((boxId) => {
-        nextBoxes[boxId] = currentPlayer
+        const box = BOXES_BY_ID[boxId]
+        return box.edgeIds.every((edgeId) => Boolean(nextDrawnEdges[edgeId]))
       })
 
-      return nextBoxes
-    })
-    setLastClaimedBoxIds(completedBoxIds)
-  }
+      setDrawnEdges(nextDrawnEdges)
+      setLastEdgeId(edge.id)
+      setHoveredEdgeId(null)
+
+      if (completedBoxIds.length === 0) {
+        setCurrentPlayer((player) => (player === 'A' ? 'B' : 'A'))
+        setLastClaimedBoxIds([])
+        return
+      }
+
+      setClaimedBoxes((currentBoxes) => {
+        const nextBoxes: Partial<Record<string, Player>> = { ...currentBoxes }
+
+        completedBoxIds.forEach((boxId) => {
+          nextBoxes[boxId] = currentPlayer
+        })
+
+        return nextBoxes
+      })
+      setLastClaimedBoxIds(completedBoxIds)
+    },
+    [claimedBoxes, currentPlayer, drawnEdges, isAiTurn, isGameOver],
+  )
 
   const handleEdgeKeyDown = (event: KeyboardEvent<SVGGElement>, edge: EdgeDefinition) => {
     if (event.key !== 'Enter' && event.key !== ' ') {
@@ -218,7 +286,23 @@ function DotsAndBoxes() {
     handleEdgeSelect(edge)
   }
 
-  const handleReset = () => {
+  useEffect(() => {
+    if (!isAiTurn) {
+      return
+    }
+
+    const timeout = setTimeout(() => {
+      const edge = chooseAiEdge(drawnEdges, claimedBoxes)
+
+      if (edge) {
+        handleEdgeSelect(edge, true)
+      }
+    }, 260)
+
+    return () => clearTimeout(timeout)
+  }, [claimedBoxes, drawnEdges, handleEdgeSelect, isAiTurn])
+
+  const resetGame = () => {
     setDrawnEdges({})
     setClaimedBoxes({})
     setCurrentPlayer('A')
@@ -227,11 +311,26 @@ function DotsAndBoxes() {
     setLastClaimedBoxIds([])
   }
 
+  const handleReset = () => {
+    resetGame()
+  }
+
+  const handleModeChange = (nextMode: GameMode) => {
+    if (nextMode === mode) {
+      return
+    }
+
+    setMode(nextMode)
+    resetGame()
+  }
+
   const instructionsId = 'dots-and-boxes-board-instructions'
   const activePreviewColor = PLAYER_STYLES[currentPlayer].line
 
   return (
     <GameShell status={statusText} onReset={handleReset}>
+      <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+
       <div className="mb-3 grid grid-cols-2 gap-2">
         <div
           className={`rounded-lg border px-3 py-2 text-sm transition ${
@@ -250,7 +349,7 @@ function DotsAndBoxes() {
               : 'border-slate-700 bg-slate-800/60 text-slate-200'
           }`}
         >
-          <p className="font-semibold">Player B</p>
+          <p className="font-semibold">{playerBLabel}</p>
           <p className="text-xs text-slate-300">Score: {scoreB}</p>
         </div>
       </div>
@@ -335,16 +434,24 @@ function DotsAndBoxes() {
               <g
                 key={edge.id}
                 role="button"
-                tabIndex={isGameOver ? -1 : 0}
-                aria-disabled={isGameOver}
+                tabIndex={isGameOver || isAiTurn ? -1 : 0}
+                aria-disabled={isGameOver || isAiTurn}
                 aria-label={`Draw ${edge.orientation} edge at row ${edge.row + 1}, column ${edge.column + 1}`}
                 onClick={() => handleEdgeSelect(edge)}
                 onKeyDown={(event) => handleEdgeKeyDown(event, edge)}
-                onPointerEnter={() => setHoveredEdgeId(edge.id)}
+                onPointerEnter={() => {
+                  if (!isAiTurn) {
+                    setHoveredEdgeId(edge.id)
+                  }
+                }}
                 onPointerLeave={() => setHoveredEdgeId((current) => (current === edge.id ? null : current))}
-                onFocus={() => setHoveredEdgeId(edge.id)}
+                onFocus={() => {
+                  if (!isAiTurn) {
+                    setHoveredEdgeId(edge.id)
+                  }
+                }}
                 onBlur={() => setHoveredEdgeId((current) => (current === edge.id ? null : current))}
-                className={isGameOver ? 'cursor-default' : 'cursor-pointer'}
+                className={isGameOver || isAiTurn ? 'cursor-default' : 'cursor-pointer'}
               >
                 <line
                   x1={edge.x1}
@@ -354,7 +461,7 @@ function DotsAndBoxes() {
                   stroke="transparent"
                   strokeWidth={EDGE_HIT_STROKE_WIDTH}
                   strokeLinecap="round"
-                  pointerEvents="stroke"
+                  pointerEvents={isAiTurn ? 'none' : 'stroke'}
                 />
                 <line
                   x1={edge.x1}

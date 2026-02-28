@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type PieceColor = 'B' | 'R'
 type Piece = {
@@ -198,6 +199,28 @@ function countKings(board: Array<Piece | null>, player: PieceColor) {
   return board.reduce((total, piece) => (piece?.color === player && piece.king ? total + 1 : total), 0)
 }
 
+function chooseAiMove(board: Array<Piece | null>, legalMoves: Move[]) {
+  let bestMove: { move: Move; score: number } | null = null
+
+  for (const move of legalMoves) {
+    const piece = board[move.from]
+
+    if (!piece) {
+      continue
+    }
+
+    const { row: destinationRow } = getCoordinates(move.to)
+    const promotes = shouldPromote(piece, destinationRow)
+    const score = move.captured.length * 100 + (promotes ? 20 : 0)
+
+    if (!bestMove || score > bestMove.score || (score === bestMove.score && move.to < bestMove.move.to)) {
+      bestMove = { move, score }
+    }
+  }
+
+  return bestMove ? bestMove.move : null
+}
+
 function CheckersPiece({ piece, animate }: { piece: Piece; animate: boolean }) {
   const isBlack = piece.color === 'B'
 
@@ -223,6 +246,7 @@ function CheckersPiece({ piece, animate }: { piece: Piece; animate: boolean }) {
 }
 
 function Checkers() {
+  const [mode, setMode] = useState<GameMode>('local')
   const [board, setBoard] = useState<Array<Piece | null>>(() => createInitialBoard())
   const [currentPlayer, setCurrentPlayer] = useState<PieceColor>('B')
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
@@ -274,11 +298,15 @@ function Checkers() {
   const redPieces = useMemo(() => countPieces(board, 'R'), [board])
   const blackKings = useMemo(() => countKings(board, 'B'), [board])
   const redKings = useMemo(() => countKings(board, 'R'), [board])
+  const isAiTurn = mode === 'ai' && !winner && currentPlayer === 'R'
+  const redLabel = mode === 'ai' ? 'Red (AI)' : 'Red'
 
   const statusText = winner
     ? winner === 'draw'
       ? "Game over! It's a draw."
       : `Game over! ${getPlayerLabel(winner)} wins.`
+    : isAiTurn
+      ? `${redLabel} is thinking (${legalMoves.length} legal move${legalMoves.length === 1 ? '' : 's'}).`
     : forcedFromIndex !== null
       ? `${getPlayerLabel(currentPlayer)} must continue capturing with the selected piece.`
       : captureRequired
@@ -287,57 +315,60 @@ function Checkers() {
 
   const boardInstructionsId = 'checkers-board-instructions'
 
-  const applyMove = (move: Move) => {
-    const movingPiece = board[move.from]
+  const applyMove = useCallback(
+    (move: Move) => {
+      const movingPiece = board[move.from]
 
-    if (!movingPiece || movingPiece.color !== currentPlayer || winner) {
-      return
-    }
+      if (!movingPiece || movingPiece.color !== currentPlayer || winner) {
+        return
+      }
 
-    const nextBoard = [...board]
-    nextBoard[move.from] = null
-    move.captured.forEach((capturedIndex) => {
-      nextBoard[capturedIndex] = null
-    })
+      const nextBoard = [...board]
+      nextBoard[move.from] = null
+      move.captured.forEach((capturedIndex) => {
+        nextBoard[capturedIndex] = null
+      })
 
-    const { row: destinationRow } = getCoordinates(move.to)
-    nextBoard[move.to] = shouldPromote(movingPiece, destinationRow) ? { ...movingPiece, king: true } : movingPiece
+      const { row: destinationRow } = getCoordinates(move.to)
+      nextBoard[move.to] = shouldPromote(movingPiece, destinationRow) ? { ...movingPiece, king: true } : movingPiece
 
-    const continuationMoves = move.captured.length > 0 ? getCaptureMovesForPiece(nextBoard, move.to) : []
+      const continuationMoves = move.captured.length > 0 ? getCaptureMovesForPiece(nextBoard, move.to) : []
 
-    setBoard(nextBoard)
-    setLastMove((current) => ({
-      from: move.from,
-      to: move.to,
-      captured: move.captured,
-      token: (current?.token ?? 0) + 1,
-    }))
-    setMoveCount((count) => count + 1)
+      setBoard(nextBoard)
+      setLastMove((current) => ({
+        from: move.from,
+        to: move.to,
+        captured: move.captured,
+        token: (current?.token ?? 0) + 1,
+      }))
+      setMoveCount((count) => count + 1)
 
-    if (move.captured.length > 0 && continuationMoves.length > 0) {
-      setForcedFromIndex(move.to)
-      setSelectedIndex(move.to)
-      return
-    }
+      if (move.captured.length > 0 && continuationMoves.length > 0) {
+        setForcedFromIndex(move.to)
+        setSelectedIndex(move.to)
+        return
+      }
 
-    const nextPlayer = getOpponent(currentPlayer)
-    const nextPlayerPieces = countPieces(nextBoard, nextPlayer)
-    const currentPlayerPieces = countPieces(nextBoard, currentPlayer)
-    const nextPlayerMoves = getLegalMoves(nextBoard, nextPlayer, null)
+      const nextPlayer = getOpponent(currentPlayer)
+      const nextPlayerPieces = countPieces(nextBoard, nextPlayer)
+      const currentPlayerPieces = countPieces(nextBoard, currentPlayer)
+      const nextPlayerMoves = getLegalMoves(nextBoard, nextPlayer, null)
 
-    setForcedFromIndex(null)
-    setSelectedIndex(null)
+      setForcedFromIndex(null)
+      setSelectedIndex(null)
 
-    if (nextPlayerPieces === 0 || nextPlayerMoves.length === 0) {
-      setWinner(currentPlayerPieces === 0 ? 'draw' : currentPlayer)
-      return
-    }
+      if (nextPlayerPieces === 0 || nextPlayerMoves.length === 0) {
+        setWinner(currentPlayerPieces === 0 ? 'draw' : currentPlayer)
+        return
+      }
 
-    setCurrentPlayer(nextPlayer)
-  }
+      setCurrentPlayer(nextPlayer)
+    },
+    [board, currentPlayer, winner],
+  )
 
   const handleCellClick = (index: number) => {
-    if (winner) {
+    if (winner || isAiTurn) {
       return
     }
 
@@ -375,7 +406,23 @@ function Checkers() {
     }
   }
 
-  const handleReset = () => {
+  useEffect(() => {
+    if (!isAiTurn || legalMoves.length === 0) {
+      return
+    }
+
+    const timeout = setTimeout(() => {
+      const aiMove = chooseAiMove(board, legalMoves)
+
+      if (aiMove) {
+        applyMove(aiMove)
+      }
+    }, 280)
+
+    return () => clearTimeout(timeout)
+  }, [applyMove, board, isAiTurn, legalMoves])
+
+  const resetGame = () => {
     setBoard(createInitialBoard())
     setCurrentPlayer('B')
     setSelectedIndex(null)
@@ -385,8 +432,23 @@ function Checkers() {
     setLastMove(null)
   }
 
+  const handleReset = () => {
+    resetGame()
+  }
+
+  const handleModeChange = (nextMode: GameMode) => {
+    if (nextMode === mode) {
+      return
+    }
+
+    setMode(nextMode)
+    resetGame()
+  }
+
   return (
     <GameShell status={statusText} onReset={handleReset} scoreLabel="Moves" scoreValue={moveCount}>
+      <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+
       <p id={boardInstructionsId} className="sr-only">
         Select one of your movable pieces, then choose a highlighted destination square. Captures are mandatory,
         and multi-captures must continue with the same piece.
@@ -411,7 +473,7 @@ function Checkers() {
               : 'border-slate-700 bg-slate-800/80'
           }`}
         >
-          <p className="font-semibold text-slate-100">Red</p>
+          <p className="font-semibold text-slate-100">{redLabel}</p>
           <p className="mt-1 text-xs text-slate-300">Pieces: {redPieces} · Kings: {redKings}</p>
           <p className="text-xs text-slate-400">Captured: {STARTING_PIECES - blackPieces}</p>
         </div>
@@ -449,7 +511,7 @@ function Checkers() {
               key={index}
               type="button"
               onClick={() => handleCellClick(index)}
-              disabled={Boolean(winner) || !isDarkSquare}
+              disabled={Boolean(winner) || !isDarkSquare || isAiTurn}
               aria-label={`Row ${row + 1}, column ${column + 1}, ${occupant}${isDestination ? ', legal destination' : ''}${isSelected ? ', selected' : ''}`}
               aria-describedby={boardInstructionsId}
               className={`motion-control-press touch-manipulation relative aspect-square rounded-md border p-0.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed ${

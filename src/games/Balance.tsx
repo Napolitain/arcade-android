@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type Player = 'A' | 'B'
 type SlotPosition = (typeof SLOT_POSITIONS)[number]
@@ -29,6 +30,7 @@ const SAFE_TORQUE_LIMIT = 14
 const BOARD_CENTER_X = 260
 const BOARD_CENTER_Y = 118
 const SLOT_SPACING = 42
+const BALANCE_AI_DELAY_MS = 650
 
 const PLAYER_COLORS: Record<Player, { pieceFill: string; pieceStroke: string; pieceText: string }> = {
   A: { pieceFill: '#22d3ee', pieceStroke: '#0e7490', pieceText: '#083344' },
@@ -59,7 +61,49 @@ function getSlotLabel(slot: SlotPosition) {
   return `${side}${Math.abs(slot)}`
 }
 
+function pickBalanceAiMove(placements: PlacedWeight[], availableWeights: number[]) {
+  const occupiedSlots = new Set(placements.map((placement) => placement.slot))
+  const currentTorque = computeTorque(placements)
+  let bestMove:
+    | {
+        slot: SlotPosition
+        weight: number
+        score: number
+      }
+    | null = null
+
+  for (const weight of availableWeights) {
+    for (const slot of SLOT_POSITIONS) {
+      if (occupiedSlots.has(slot)) {
+        continue
+      }
+
+      const nextTorque = currentTorque + slot * weight
+      const overflow = Math.max(0, Math.abs(nextTorque) - SAFE_TORQUE_LIMIT)
+      const score = overflow === 0 ? Math.abs(nextTorque) : 100 + overflow * 20 + Math.abs(nextTorque)
+
+      if (
+        !bestMove ||
+        score < bestMove.score ||
+        (score === bestMove.score && Math.abs(slot) < Math.abs(bestMove.slot))
+      ) {
+        bestMove = { slot, weight, score }
+      }
+    }
+  }
+
+  if (!bestMove) {
+    return null
+  }
+
+  return {
+    slot: bestMove.slot,
+    weight: bestMove.weight,
+  }
+}
+
 function Balance() {
+  const [mode, setMode] = useState<GameMode>('local')
   const [placements, setPlacements] = useState<PlacedWeight[]>([])
   const [currentPlayer, setCurrentPlayer] = useState<Player>('A')
   const [startingPlayer, setStartingPlayer] = useState<Player>('A')
@@ -81,6 +125,7 @@ function Balance() {
     () => new Map(placements.map((placement) => [placement.slot, placement])),
     [placements],
   )
+  const isAiTurn = mode === 'ai' && currentPlayer === 'B' && !isRoundOver
   const currentPlayerWeights = weightPool[currentPlayer]
   const selectedWeight = selectedWeightByPlayer[currentPlayer]
 
@@ -102,70 +147,94 @@ function Balance() {
       return `Round ${roundNumber}: all slots filled at torque ${formatTorque(roundResult.finalTorque)}. Draw round.`
     }
 
-    return `Round ${roundNumber} · Player ${currentPlayer} to move · Torque ${formatTorque(torque)} (limit ±${SAFE_TORQUE_LIMIT}).`
-  }, [currentPlayer, roundNumber, roundResult, torque])
+    const activeLabel =
+      currentPlayer === 'A' ? 'Player A' : mode === 'ai' ? 'AI (Player B)' : 'Player B'
+    return `Round ${roundNumber} · ${activeLabel} to move · Torque ${formatTorque(torque)} (limit ±${SAFE_TORQUE_LIMIT}).`
+  }, [currentPlayer, mode, roundNumber, roundResult, torque])
 
-  const placeWeight = (slot: SlotPosition) => {
-    if (isRoundOver || placementBySlot.has(slot)) {
+  const placeWeight = useCallback(
+    (slot: SlotPosition, forcedWeight?: number, isAiMove = false) => {
+      if (isRoundOver || placementBySlot.has(slot) || (isAiTurn && !isAiMove)) {
+        return
+      }
+
+      const activeWeights = weightPool[currentPlayer]
+      const weightToPlace = forcedWeight ?? selectedWeight
+      const selectedIndex = activeWeights.indexOf(weightToPlace)
+
+      if (selectedIndex < 0) {
+        return
+      }
+
+      const placedWeight: PlacedWeight = { slot, weight: weightToPlace, player: currentPlayer }
+      const nextPlacements = [...placements, placedWeight]
+      const nextTorque = computeTorque(nextPlacements)
+
+      const nextActiveWeights = [...activeWeights]
+      nextActiveWeights.splice(selectedIndex, 1)
+
+      const nextWeightPool: Record<Player, number[]> = {
+        ...weightPool,
+        [currentPlayer]: nextActiveWeights,
+      }
+      const nextSelectedWeightByPlayer: Record<Player, number> = {
+        ...selectedWeightByPlayer,
+        [currentPlayer]: nextActiveWeights[0] ?? INITIAL_WEIGHTS[0],
+      }
+
+      setPlacements(nextPlacements)
+      setWeightPool(nextWeightPool)
+      setSelectedWeightByPlayer(nextSelectedWeightByPlayer)
+      setLastPlacedSlot(slot)
+      setAnimationCycle((value) => value + 1)
+
+      if (Math.abs(nextTorque) > SAFE_TORQUE_LIMIT) {
+        const winner = getOpponent(currentPlayer)
+        setSessionWins((wins) => ({
+          ...wins,
+          [winner]: wins[winner] + 1,
+        }))
+        setRoundResult({
+          reason: 'tip',
+          winner,
+          loser: currentPlayer,
+          finalTorque: nextTorque,
+        })
+        return
+      }
+
+      if (nextPlacements.length === SLOT_POSITIONS.length) {
+        setDrawRounds((value) => value + 1)
+        setRoundResult({
+          reason: 'stable',
+          winner: null,
+          finalTorque: nextTorque,
+        })
+        return
+      }
+
+      setCurrentPlayer(getOpponent(currentPlayer))
+    },
+    [currentPlayer, isAiTurn, isRoundOver, placementBySlot, placements, selectedWeight, selectedWeightByPlayer, weightPool],
+  )
+
+  useEffect(() => {
+    if (!isAiTurn) {
       return
     }
 
-    const activeWeights = weightPool[currentPlayer]
-    const selectedIndex = activeWeights.indexOf(selectedWeight)
+    const aiMove = pickBalanceAiMove(placements, weightPool.B)
 
-    if (selectedIndex < 0) {
+    if (!aiMove) {
       return
     }
 
-    const placedWeight: PlacedWeight = { slot, weight: selectedWeight, player: currentPlayer }
-    const nextPlacements = [...placements, placedWeight]
-    const nextTorque = computeTorque(nextPlacements)
+    const aiTimer = window.setTimeout(() => {
+      placeWeight(aiMove.slot, aiMove.weight, true)
+    }, BALANCE_AI_DELAY_MS)
 
-    const nextActiveWeights = [...activeWeights]
-    nextActiveWeights.splice(selectedIndex, 1)
-
-    const nextWeightPool: Record<Player, number[]> = {
-      ...weightPool,
-      [currentPlayer]: nextActiveWeights,
-    }
-    const nextSelectedWeightByPlayer: Record<Player, number> = {
-      ...selectedWeightByPlayer,
-      [currentPlayer]: nextActiveWeights[0] ?? INITIAL_WEIGHTS[0],
-    }
-
-    setPlacements(nextPlacements)
-    setWeightPool(nextWeightPool)
-    setSelectedWeightByPlayer(nextSelectedWeightByPlayer)
-    setLastPlacedSlot(slot)
-    setAnimationCycle((value) => value + 1)
-
-    if (Math.abs(nextTorque) > SAFE_TORQUE_LIMIT) {
-      const winner = getOpponent(currentPlayer)
-      setSessionWins((wins) => ({
-        ...wins,
-        [winner]: wins[winner] + 1,
-      }))
-      setRoundResult({
-        reason: 'tip',
-        winner,
-        loser: currentPlayer,
-        finalTorque: nextTorque,
-      })
-      return
-    }
-
-    if (nextPlacements.length === SLOT_POSITIONS.length) {
-      setDrawRounds((value) => value + 1)
-      setRoundResult({
-        reason: 'stable',
-        winner: null,
-        finalTorque: nextTorque,
-      })
-      return
-    }
-
-    setCurrentPlayer(getOpponent(currentPlayer))
-  }
+    return () => window.clearTimeout(aiTimer)
+  }, [isAiTurn, placeWeight, placements, weightPool])
 
   const startNextRound = () => {
     if (!isRoundOver) {
@@ -198,6 +267,15 @@ function Balance() {
     setDrawRounds(0)
   }
 
+  const handleModeChange = (nextMode: GameMode) => {
+    if (nextMode === mode) {
+      return
+    }
+
+    setMode(nextMode)
+    resetSession()
+  }
+
   const boardInstructionsId = 'balance-board-instructions'
   const controlsInstructionsId = 'balance-controls-instructions'
   const torqueFill = Math.min(100, Math.round((Math.abs(torque) / SAFE_TORQUE_LIMIT) * 100))
@@ -210,6 +288,8 @@ function Balance() {
 
   return (
     <GameShell status={status} onReset={resetSession}>
+      <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+
       <div className="mb-3 grid grid-cols-2 gap-2 text-sm" aria-label="Balance session scoreboard">
         {(['A', 'B'] as const).map((player) => {
           const isActive = !isRoundOver && currentPlayer === player
@@ -227,7 +307,7 @@ function Balance() {
               }`}
               aria-label={`Player ${player}: ${sessionWins[player]} session wins.`}
             >
-              <p className="font-semibold">Player {player}</p>
+              <p className="font-semibold">{player === 'B' && mode === 'ai' ? 'AI (Player B)' : `Player ${player}`}</p>
               <p className="text-xs text-slate-300">Session wins: {sessionWins[player]}</p>
               <p className="mt-1 text-[0.7rem] text-slate-400">
                 Weights left: {weightPool[player].length > 0 ? weightPool[player].join(', ') : 'none'}
@@ -330,7 +410,9 @@ function Balance() {
 
       <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/50 p-3">
         <p id={controlsInstructionsId} className="text-xs text-slate-300">
-          Choose one remaining weight for Player {currentPlayer}, then tap or click an empty slot.
+          {isAiTurn
+            ? 'AI is choosing a weight and slot.'
+            : `Choose one remaining weight for Player ${currentPlayer}, then tap or click an empty slot.`}
         </p>
 
         <div className="mt-2 grid grid-cols-4 gap-2">
@@ -347,7 +429,7 @@ function Balance() {
                     [currentPlayer]: weight,
                   }))
                 }
-                disabled={isRoundOver}
+                disabled={isRoundOver || isAiTurn}
                 data-pressed={isSelected}
                 aria-label={`Select weight ${weight}`}
                 className={`motion-control-press touch-manipulation rounded-lg border py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed disabled:border-slate-700/70 disabled:bg-slate-800/40 disabled:text-slate-500 ${
@@ -365,7 +447,7 @@ function Balance() {
         <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-8">
           {SLOT_POSITIONS.map((slot) => {
             const placement = placementBySlot.get(slot)
-            const isDisabled = isRoundOver || Boolean(placement)
+            const isDisabled = isRoundOver || isAiTurn || Boolean(placement)
             const slotSide = slot < 0 ? 'left' : 'right'
             const slotDistance = Math.abs(slot)
 

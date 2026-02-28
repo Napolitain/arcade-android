@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type ShotResult = 'hit' | 'miss'
 type Turn = 'player' | 'cpu'
@@ -159,7 +160,7 @@ function getSunkCells(ships: ShipState[]) {
   )
 }
 
-function createBattleState(playerWins = 0): BattleState {
+function createBattleState(playerWins = 0, mode: GameMode = 'ai'): BattleState {
   return {
     playerWins,
     playerShips: createRandomFleet(),
@@ -168,7 +169,10 @@ function createBattleState(playerWins = 0): BattleState {
     cpuShots: {},
     turn: 'player',
     winner: null,
-    lastEvent: 'Target enemy waters to start the battle.',
+    lastEvent:
+      mode === 'ai'
+        ? 'Target enemy waters to start the battle.'
+        : 'Player 1: target Player 2 waters to start the battle.',
   }
 }
 
@@ -232,10 +236,11 @@ function StatItem({ label, value }: { label: string; value: string }) {
 }
 
 function GridAttack() {
-  const [battleState, setBattleState] = useState<BattleState>(() => createBattleState())
+  const [mode, setMode] = useState<GameMode>('ai')
+  const [battleState, setBattleState] = useState<BattleState>(() => createBattleState(0, 'ai'))
 
   useEffect(() => {
-    if (battleState.turn !== 'cpu' || battleState.winner) {
+    if (mode !== 'ai' || battleState.turn !== 'cpu' || battleState.winner) {
       return
     }
 
@@ -281,7 +286,7 @@ function GridAttack() {
     }, CPU_DELAY_MS)
 
     return () => window.clearTimeout(cpuTurnTimer)
-  }, [battleState.turn, battleState.winner])
+  }, [battleState.turn, battleState.winner, mode])
 
   const playerShipCells = useMemo(() => getShipCells(battleState.playerShips), [battleState.playerShips])
   const playerSunkCells = useMemo(() => getSunkCells(battleState.playerShips), [battleState.playerShips])
@@ -296,16 +301,25 @@ function GridAttack() {
   const enemyShipsSunk = battleState.cpuShips.filter((ship) => ship.hits >= ship.size).length
 
   const canTargetEnemy = battleState.turn === 'player' && !battleState.winner
+  const canTargetPlayer = mode === 'local' && battleState.turn === 'cpu' && !battleState.winner
   const revealEnemyShips = Boolean(battleState.winner)
   const enemyBoardInstructionsId = 'grid-attack-enemy-board-instructions'
 
   const statusText = battleState.winner
     ? battleState.winner === 'player'
-      ? `Victory! ${battleState.lastEvent}`
-      : `Defeat. ${battleState.lastEvent}`
+      ? mode === 'ai'
+        ? `Victory! ${battleState.lastEvent}`
+        : `Player 1 wins! ${battleState.lastEvent}`
+      : mode === 'ai'
+        ? `Defeat. ${battleState.lastEvent}`
+        : `Player 2 wins! ${battleState.lastEvent}`
     : battleState.turn === 'player'
-      ? `Your turn. ${battleState.lastEvent}`
-      : `CPU turn. ${battleState.lastEvent}`
+      ? mode === 'ai'
+        ? `Your turn. ${battleState.lastEvent}`
+        : `Player 1 turn. ${battleState.lastEvent}`
+      : mode === 'ai'
+        ? `CPU turn. ${battleState.lastEvent}`
+        : `Player 2 turn. ${battleState.lastEvent}`
 
   const handleEnemyCellAttack = (cellIndex: number) => {
     setBattleState((currentState) => {
@@ -315,10 +329,20 @@ function GridAttack() {
 
       const outcome = applyAttack(currentState.cpuShips, currentState.playerShots, cellIndex)
       const coordinate = formatCell(cellIndex)
-      let lastEvent = outcome.result === 'hit' ? `Direct hit at ${coordinate}.` : `Shot missed at ${coordinate}.`
+      let lastEvent =
+        mode === 'ai'
+          ? outcome.result === 'hit'
+            ? `Direct hit at ${coordinate}.`
+            : `Shot missed at ${coordinate}.`
+          : outcome.result === 'hit'
+            ? `Player 1 hit Player 2 at ${coordinate}.`
+            : `Player 1 missed at ${coordinate}.`
 
       if (outcome.sunkShipSize) {
-        lastEvent = `You sunk an enemy ${outcome.sunkShipSize}-cell ship at ${coordinate}.`
+        lastEvent =
+          mode === 'ai'
+            ? `You sunk an enemy ${outcome.sunkShipSize}-cell ship at ${coordinate}.`
+            : `Player 1 sunk a Player 2 ${outcome.sunkShipSize}-cell ship at ${coordinate}.`
       }
 
       if (outcome.allShipsSunk) {
@@ -328,7 +352,7 @@ function GridAttack() {
           cpuShips: outcome.nextShips,
           playerShots: outcome.nextShots,
           winner: 'player',
-          lastEvent: 'You destroyed the entire enemy fleet.',
+          lastEvent: mode === 'ai' ? 'You destroyed the entire enemy fleet.' : 'Player 1 destroyed Player 2 fleet.',
         }
       }
 
@@ -342,45 +366,116 @@ function GridAttack() {
     })
   }
 
+  const handlePlayerCellAttack = (cellIndex: number) => {
+    setBattleState((currentState) => {
+      if (
+        mode !== 'local' ||
+        currentState.turn !== 'cpu' ||
+        currentState.winner ||
+        currentState.cpuShots[cellIndex]
+      ) {
+        return currentState
+      }
+
+      const outcome = applyAttack(currentState.playerShips, currentState.cpuShots, cellIndex)
+      const coordinate = formatCell(cellIndex)
+      let lastEvent = outcome.result === 'hit' ? `Player 2 hit Player 1 at ${coordinate}.` : `Player 2 missed at ${coordinate}.`
+
+      if (outcome.sunkShipSize) {
+        lastEvent = `Player 2 sunk a Player 1 ${outcome.sunkShipSize}-cell ship at ${coordinate}.`
+      }
+
+      if (outcome.allShipsSunk) {
+        return {
+          ...currentState,
+          playerShips: outcome.nextShips,
+          cpuShots: outcome.nextShots,
+          winner: 'cpu',
+          lastEvent: 'Player 2 destroyed Player 1 fleet.',
+        }
+      }
+
+      return {
+        ...currentState,
+        playerShips: outcome.nextShips,
+        cpuShots: outcome.nextShots,
+        turn: 'player',
+        lastEvent,
+      }
+    })
+  }
+
   const handleReset = () => {
-    setBattleState((currentState) => createBattleState(currentState.playerWins))
+    setBattleState((currentState) => createBattleState(currentState.playerWins, mode))
+  }
+
+  const handleModeChange = (nextMode: GameMode) => {
+    if (nextMode === mode) {
+      return
+    }
+
+    setMode(nextMode)
+    setBattleState(createBattleState(0, nextMode))
   }
 
   return (
     <GameShell
       status={statusText}
       onReset={handleReset}
-      scoreLabel="Session wins"
+      scoreLabel={mode === 'ai' ? 'Session wins' : 'Player 1 wins'}
       scoreValue={battleState.playerWins}
     >
+      <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+
       <p id={enemyBoardInstructionsId} className="sr-only">
-        Attack the enemy board by selecting an untried cell. Hits, misses, and sunk ships are shown on the grid.
+        {mode === 'ai'
+          ? 'Attack the enemy board by selecting an untried cell. Hits, misses, and sunk ships are shown on the grid.'
+          : 'Player 1 attacks the Player 2 board. During Player 2 turns, attack the Player 1 board on the left.'}
       </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-xl border border-slate-700/70 bg-slate-900/45 p-3">
-          <h3 className="text-sm font-semibold text-cyan-200">Your fleet</h3>
-          <p className="mt-1 text-xs text-slate-300">Green markers are your ships. Red marks are enemy hits.</p>
+          <h3 className="text-sm font-semibold text-cyan-200">{mode === 'ai' ? 'Your fleet' : 'Player 1 fleet'}</h3>
+          <p className="mt-1 text-xs text-slate-300">
+            {mode === 'ai'
+              ? 'Green markers are your ships. Red marks are enemy hits.'
+              : 'Player 2 attacks this grid during their turn.'}
+          </p>
           <div className="mx-auto mt-3 grid w-full max-w-[22rem] grid-cols-6 gap-1.5">
-            {Array.from({ length: CELL_COUNT }, (_, index) => (
-              <div key={`player-${index}`} className="aspect-square">
-                <CellIcon
-                  shot={battleState.cpuShots[index]}
-                  hasShip={playerShipCells.has(index)}
-                  showShip
-                  isSunk={playerSunkCells.has(index)}
-                />
-              </div>
-            ))}
+            {Array.from({ length: CELL_COUNT }, (_, index) => {
+              const row = Math.floor(index / GRID_SIZE)
+              const column = index % GRID_SIZE
+              const shot = battleState.cpuShots[index]
+              const hasShip = playerShipCells.has(index)
+              const isDisabled = !canTargetPlayer || Boolean(shot)
+              const shotText = shot === 'hit' ? 'hit' : shot === 'miss' ? 'miss' : 'untargeted'
+
+              return (
+                <button
+                  key={`player-${index}`}
+                  type="button"
+                  onClick={() => handlePlayerCellAttack(index)}
+                  disabled={isDisabled}
+                  aria-label={`Player 1 cell ${ROW_LABELS[row]}${column + 1}, ${shotText}${!shot && canTargetPlayer ? ', ready to fire' : ''}`}
+                  className="motion-control-press touch-manipulation aspect-square rounded-lg border border-slate-700 bg-slate-950/70 p-0.5 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:opacity-80"
+                >
+                  <CellIcon shot={shot} hasShip={hasShip} showShip isSunk={playerSunkCells.has(index)} />
+                </button>
+              )
+            })}
           </div>
         </section>
 
         <section className="rounded-xl border border-slate-700/70 bg-slate-900/45 p-3">
-          <h3 className="text-sm font-semibold text-rose-200">Enemy waters</h3>
-          <p className="mt-1 text-xs text-slate-300">Tap or press Enter to fire. Yellow rings mark sunk enemy ships.</p>
+          <h3 className="text-sm font-semibold text-rose-200">{mode === 'ai' ? 'Enemy waters' : 'Player 2 fleet'}</h3>
+          <p className="mt-1 text-xs text-slate-300">
+            {mode === 'ai'
+              ? 'Tap or press Enter to fire. Yellow rings mark sunk enemy ships.'
+              : 'Player 1 attacks this board. Yellow rings mark sunk ships.'}
+          </p>
           <div
             role="grid"
-            aria-label="Enemy board"
+            aria-label={mode === 'ai' ? 'Enemy board' : 'Player 2 board'}
             aria-describedby={enemyBoardInstructionsId}
             className="mx-auto mt-3 grid w-full max-w-[22rem] grid-cols-6 gap-1.5"
           >
@@ -398,7 +493,7 @@ function GridAttack() {
                   type="button"
                   onClick={() => handleEnemyCellAttack(index)}
                   disabled={isDisabled}
-                  aria-label={`Enemy cell ${ROW_LABELS[row]}${column + 1}, ${shotText}${!shot && canTargetEnemy ? ', ready to fire' : ''}`}
+                  aria-label={`${mode === 'ai' ? 'Enemy' : 'Player 2'} cell ${ROW_LABELS[row]}${column + 1}, ${shotText}${!shot && canTargetEnemy ? ', ready to fire' : ''}`}
                   aria-describedby={enemyBoardInstructionsId}
                   className="motion-control-press touch-manipulation aspect-square rounded-lg border border-slate-700 bg-slate-950/70 p-0.5 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:opacity-80"
                 >
@@ -416,12 +511,12 @@ function GridAttack() {
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <StatItem label="Your hits / misses" value={`${playerHits} / ${playerMisses}`} />
-        <StatItem label="CPU hits / misses" value={`${cpuHits} / ${cpuMisses}`} />
-        <StatItem label="Enemy ships sunk" value={`${enemyShipsSunk} / ${SHIP_SIZES.length}`} />
-        <StatItem label="Your ships sunk" value={`${playerShipsSunk} / ${SHIP_SIZES.length}`} />
-        <StatItem label="Enemy cells left" value={`${CELL_COUNT - Object.keys(battleState.playerShots).length}`} />
-        <StatItem label="Your cells untouched" value={`${CELL_COUNT - Object.keys(battleState.cpuShots).length}`} />
+        <StatItem label={`${mode === 'ai' ? 'Your' : 'Player 1'} hits / misses`} value={`${playerHits} / ${playerMisses}`} />
+        <StatItem label={`${mode === 'ai' ? 'CPU' : 'Player 2'} hits / misses`} value={`${cpuHits} / ${cpuMisses}`} />
+        <StatItem label={`${mode === 'ai' ? 'Enemy' : 'Player 2'} ships sunk`} value={`${enemyShipsSunk} / ${SHIP_SIZES.length}`} />
+        <StatItem label={`${mode === 'ai' ? 'Your' : 'Player 1'} ships sunk`} value={`${playerShipsSunk} / ${SHIP_SIZES.length}`} />
+        <StatItem label={`${mode === 'ai' ? 'Enemy' : 'Player 2'} cells left`} value={`${CELL_COUNT - Object.keys(battleState.playerShots).length}`} />
+        <StatItem label={`${mode === 'ai' ? 'Your' : 'Player 1'} cells untouched`} value={`${CELL_COUNT - Object.keys(battleState.cpuShots).length}`} />
       </dl>
     </GameShell>
   )

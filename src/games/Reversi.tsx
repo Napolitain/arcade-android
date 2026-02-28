@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type Disc = 'B' | 'W' | null
 type Player = Exclude<Disc, null>
@@ -127,6 +128,24 @@ function countDiscs(board: Disc[], player: Player) {
   return board.reduce((total, disc) => (disc === player ? total + 1 : total), 0)
 }
 
+function chooseAiMove(board: Disc[], legalMoves: number[], player: Player) {
+  let bestMove: { index: number; score: number } | null = null
+
+  for (const index of legalMoves) {
+    const row = Math.floor(index / BOARD_SIZE)
+    const column = index % BOARD_SIZE
+    const captures = getCapturedDiscs(board, row, column, player).length
+    const isCorner = (row === 0 || row === BOARD_SIZE - 1) && (column === 0 || column === BOARD_SIZE - 1)
+    const score = (isCorner ? 1000 : 0) + captures
+
+    if (!bestMove || score > bestMove.score || (score === bestMove.score && index < bestMove.index)) {
+      bestMove = { index, score }
+    }
+  }
+
+  return bestMove ? bestMove.index : null
+}
+
 function ReversiDisc({ disc, animation }: { disc: Player; animation: DiscAnimation }) {
   const isBlack = disc === 'B'
   const animationClass =
@@ -160,6 +179,7 @@ function ReversiDisc({ disc, animation }: { disc: Player; animation: DiscAnimati
 }
 
 function Reversi() {
+  const [mode, setMode] = useState<GameMode>('local')
   const [board, setBoard] = useState<Disc[]>(() => createInitialBoard())
   const [currentPlayer, setCurrentPlayer] = useState<Player>('B')
   const [isGameOver, setIsGameOver] = useState(false)
@@ -170,9 +190,10 @@ function Reversi() {
 
   const blackCount = useMemo(() => countDiscs(board, 'B'), [board])
   const whiteCount = useMemo(() => countDiscs(board, 'W'), [board])
-  const legalMoves = useMemo(() => new Set(getLegalMoves(board, currentPlayer)), [board, currentPlayer])
+  const legalMoveIndexes = useMemo(() => getLegalMoves(board, currentPlayer), [board, currentPlayer])
+  const legalMoves = useMemo(() => new Set(legalMoveIndexes), [legalMoveIndexes])
   const lastFlippedLookup = useMemo(() => new Set(lastFlippedIndices), [lastFlippedIndices])
-  const legalMoveCount = legalMoves.size
+  const legalMoveCount = legalMoveIndexes.length
 
   const winner = useMemo(() => {
     if (!isGameOver || blackCount === whiteCount) {
@@ -182,56 +203,88 @@ function Reversi() {
     return blackCount > whiteCount ? 'B' : 'W'
   }, [blackCount, whiteCount, isGameOver])
 
+  const isAiTurn = mode === 'ai' && !isGameOver && currentPlayer === 'W'
   const activePlayerLabel = getPlayerLabel(currentPlayer)
+  const whiteLabel = mode === 'ai' ? 'White (AI)' : 'White'
+  const passPrefix = passMessage ? `Pass: ${passMessage} ` : ''
   const statusText = isGameOver
     ? winner
       ? `Game over! ${getPlayerLabel(winner)} wins.`
       : "Game over! It's a tie."
+    : isAiTurn
+      ? `${passPrefix}${whiteLabel} is thinking (${legalMoveCount} legal move${legalMoveCount === 1 ? '' : 's'}).`
     : passMessage
       ? `Pass: ${passMessage} ${activePlayerLabel} to move (${legalMoveCount} legal move${legalMoveCount === 1 ? '' : 's'}).`
       : `${activePlayerLabel} to move (${legalMoveCount} legal move${legalMoveCount === 1 ? '' : 's'}).`
 
   const boardInstructionsId = 'reversi-board-instructions'
 
-  const handleCellClick = (index: number) => {
-    if (isGameOver) {
-      return
-    }
+  const playMove = useCallback(
+    (index: number) => {
+      if (isGameOver) {
+        return
+      }
 
-    const move = applyMove(board, index, currentPlayer)
+      const move = applyMove(board, index, currentPlayer)
 
-    if (!move) {
-      return
-    }
+      if (!move) {
+        return
+      }
 
-    const opponent = getOpponent(currentPlayer)
-    const opponentLegalMoves = getLegalMoves(move.nextBoard, opponent)
-    const currentLegalMoves = getLegalMoves(move.nextBoard, currentPlayer)
+      const opponent = getOpponent(currentPlayer)
+      const opponentLegalMoves = getLegalMoves(move.nextBoard, opponent)
+      const currentLegalMoves = getLegalMoves(move.nextBoard, currentPlayer)
 
-    setBoard(move.nextBoard)
-    setLastPlacedIndex(index)
-    setLastFlippedIndices(move.captured)
-    setAnimationCycle((value) => value + 1)
+      setBoard(move.nextBoard)
+      setLastPlacedIndex(index)
+      setLastFlippedIndices(move.captured)
+      setAnimationCycle((value) => value + 1)
 
-    if (opponentLegalMoves.length > 0) {
-      setCurrentPlayer(opponent)
+      if (opponentLegalMoves.length > 0) {
+        setCurrentPlayer(opponent)
+        setPassMessage(null)
+        setIsGameOver(false)
+        return
+      }
+
+      if (currentLegalMoves.length > 0) {
+        setCurrentPlayer(currentPlayer)
+        setPassMessage(`${getPlayerLabel(opponent)} has no legal moves. ${getPlayerLabel(currentPlayer)} plays again.`)
+        setIsGameOver(false)
+        return
+      }
+
       setPassMessage(null)
-      setIsGameOver(false)
+      setIsGameOver(true)
+    },
+    [board, currentPlayer, isGameOver],
+  )
+
+  const handleCellClick = (index: number) => {
+    if (isAiTurn) {
       return
     }
 
-    if (currentLegalMoves.length > 0) {
-      setCurrentPlayer(currentPlayer)
-      setPassMessage(`${getPlayerLabel(opponent)} has no legal moves. ${getPlayerLabel(currentPlayer)} plays again.`)
-      setIsGameOver(false)
-      return
-    }
-
-    setPassMessage(null)
-    setIsGameOver(true)
+    playMove(index)
   }
 
-  const handleReset = () => {
+  useEffect(() => {
+    if (!isAiTurn || legalMoveIndexes.length === 0) {
+      return
+    }
+
+    const timeout = setTimeout(() => {
+      const aiMove = chooseAiMove(board, legalMoveIndexes, currentPlayer)
+
+      if (aiMove !== null) {
+        playMove(aiMove)
+      }
+    }, 280)
+
+    return () => clearTimeout(timeout)
+  }, [board, currentPlayer, isAiTurn, legalMoveIndexes, playMove])
+
+  const resetGame = () => {
     setBoard(createInitialBoard())
     setCurrentPlayer('B')
     setIsGameOver(false)
@@ -241,8 +294,23 @@ function Reversi() {
     setAnimationCycle(0)
   }
 
+  const handleReset = () => {
+    resetGame()
+  }
+
+  const handleModeChange = (nextMode: GameMode) => {
+    if (nextMode === mode) {
+      return
+    }
+
+    setMode(nextMode)
+    resetGame()
+  }
+
   return (
     <GameShell status={statusText} onReset={handleReset}>
+      <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+
       <p id={boardInstructionsId} className="sr-only">
         Place discs on highlighted cells to capture lines of your opponent&apos;s discs.
       </p>
@@ -273,12 +341,12 @@ function Reversi() {
               ? 'motion-tile-pop border-cyan-300 bg-cyan-500/15 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]'
               : 'border-slate-700 bg-slate-800/80'
           }`}
-          aria-label={`White has ${whiteCount} discs${!isGameOver && currentPlayer === 'W' ? ', active player' : ''}`}
+          aria-label={`${whiteLabel} has ${whiteCount} discs${!isGameOver && currentPlayer === 'W' ? ', active player' : ''}`}
         >
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-2">
               <span className="h-3 w-3 rounded-full bg-slate-100 ring-1 ring-slate-300" aria-hidden="true" />
-              White
+              {whiteLabel}
             </span>
             <span className="font-semibold text-cyan-100">{whiteCount}</span>
           </div>
@@ -333,7 +401,7 @@ function Reversi() {
               key={`${index}-${animation ? animationCycle : 'steady'}`}
               type="button"
               onClick={() => handleCellClick(index)}
-              disabled={!isLegalMove}
+              disabled={!isLegalMove || isAiTurn}
               title={
                 isLegalMove
                   ? `Play at row ${row + 1}, column ${column + 1}`

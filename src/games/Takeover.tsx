@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import GameShell from './GameShell'
+import GameModeToggle, { type GameMode } from './GameModeToggle'
 
 type Player = 'B' | 'O'
 type Cell = Player | null
@@ -15,6 +16,7 @@ type Move = {
 const BOARD_SIZE = 7
 const TOTAL_CELLS = BOARD_SIZE * BOARD_SIZE
 const MOVE_RANGE = 2
+const TAKEOVER_AI_DELAY_MS = 550
 const ORTHOGONAL_AND_DIAGONAL: ReadonlyArray<readonly [number, number]> = [
   [-1, -1],
   [-1, 0],
@@ -191,6 +193,32 @@ function resolveTurn(board: Cell[], candidatePlayer: Player) {
   }
 }
 
+function pickTakeoverAiMove(board: Cell[], legalMoves: Move[], player: Player) {
+  let bestMove: Move | null = null
+  let bestScore = Number.NEGATIVE_INFINITY
+  const opponent = getOpponent(player)
+
+  legalMoves.forEach((move) => {
+    const appliedMove = applyMove(board, move, player)
+
+    if (!appliedMove) {
+      return
+    }
+
+    const conversionScore = appliedMove.converted.length * 4
+    const cloneBonus = move.kind === 'clone' ? 2 : 0
+    const boardControlScore = countPieces(appliedMove.nextBoard, player) - countPieces(appliedMove.nextBoard, opponent)
+    const score = conversionScore + cloneBonus + boardControlScore * 0.1
+
+    if (score > bestScore) {
+      bestScore = score
+      bestMove = move
+    }
+  })
+
+  return bestMove ?? legalMoves[0] ?? null
+}
+
 function TakeoverToken({ player, animation }: { player: Player; animation: TokenAnimation }) {
   const isBlue = player === 'B'
   const animationClass = animation === 'place' ? 'motion-drop' : animation === 'convert' ? 'motion-tile-merge' : ''
@@ -213,6 +241,7 @@ function TakeoverToken({ player, animation }: { player: Player; animation: Token
 }
 
 function Takeover() {
+  const [mode, setMode] = useState<GameMode>('local')
   const [board, setBoard] = useState<Cell[]>(() => createInitialBoard())
   const [currentPlayer, setCurrentPlayer] = useState<Player>('B')
   const [selectedSource, setSelectedSource] = useState<number | null>(null)
@@ -221,6 +250,7 @@ function Takeover() {
   const [lastMove, setLastMove] = useState<Move | null>(null)
   const [lastConvertedIndices, setLastConvertedIndices] = useState<number[]>([])
   const [animationCycle, setAnimationCycle] = useState(0)
+  const isAiTurn = mode === 'ai' && currentPlayer === 'O' && !isGameOver
 
   const blueCount = useMemo(() => countPieces(board, 'B'), [board])
   const orangeCount = useMemo(() => countPieces(board, 'O'), [board])
@@ -274,13 +304,15 @@ function Takeover() {
       : `${activePlayerLabel} to move (${legalMoveCount} legal move${legalMoveCount === 1 ? '' : 's'}).`
 
   const selectionHint = selectedSource === null
-    ? `${activePlayerLabel}: select a highlighted piece to move.`
+    ? isAiTurn
+      ? 'AI (Orange) is selecting a move...'
+      : `${activePlayerLabel}: select a highlighted piece to move.`
     : `Selected row ${getCoordinates(selectedSource).row + 1}, column ${getCoordinates(selectedSource).column + 1}. Choose a highlighted destination.`
 
   const boardInstructionsId = 'takeover-board-instructions'
 
   const handleCellClick = (index: number) => {
-    if (isGameOver) {
+    if (isGameOver || isAiTurn) {
       return
     }
 
@@ -333,7 +365,39 @@ function Takeover() {
     setAnimationCycle((value) => value + 1)
   }
 
-  const handleReset = () => {
+  useEffect(() => {
+    if (!isAiTurn) {
+      return
+    }
+
+    const aiMove = pickTakeoverAiMove(board, legalMoves, 'O')
+
+    if (!aiMove) {
+      return
+    }
+
+    const aiTimer = window.setTimeout(() => {
+      const result = applyMove(board, aiMove, 'O')
+
+      if (!result) {
+        return
+      }
+
+      const nextTurn = resolveTurn(result.nextBoard, 'B')
+      setBoard(result.nextBoard)
+      setCurrentPlayer(nextTurn.nextPlayer)
+      setIsGameOver(nextTurn.isGameOver)
+      setPassMessage(nextTurn.passMessage)
+      setSelectedSource(null)
+      setLastMove(aiMove)
+      setLastConvertedIndices(result.converted)
+      setAnimationCycle((value) => value + 1)
+    }, TAKEOVER_AI_DELAY_MS)
+
+    return () => window.clearTimeout(aiTimer)
+  }, [board, isAiTurn, legalMoves])
+
+  const resetGame = () => {
     setBoard(createInitialBoard())
     setCurrentPlayer('B')
     setSelectedSource(null)
@@ -344,8 +408,23 @@ function Takeover() {
     setAnimationCycle(0)
   }
 
+  const handleReset = () => {
+    resetGame()
+  }
+
+  const handleModeChange = (nextMode: GameMode) => {
+    if (nextMode === mode) {
+      return
+    }
+
+    setMode(nextMode)
+    resetGame()
+  }
+
   return (
     <GameShell status={statusText} onReset={handleReset}>
+      <GameModeToggle mode={mode} onModeChange={handleModeChange} />
+
       <p id={boardInstructionsId} className="sr-only">
         Select one of your highlighted tokens, then select a highlighted empty cell within one or two squares to clone or jump.
       </p>
@@ -386,7 +465,7 @@ function Takeover() {
             <span className="font-semibold text-cyan-100">{orangeCount}</span>
           </div>
           <p className={`mt-1 text-[0.65rem] uppercase tracking-wide ${!isGameOver && currentPlayer === 'O' ? 'text-orange-200' : 'text-slate-400'}`}>
-            {!isGameOver && currentPlayer === 'O' ? 'To move' : 'Waiting'}
+            {!isGameOver && currentPlayer === 'O' ? (mode === 'ai' ? 'AI turn' : 'To move') : 'Waiting'}
           </p>
         </div>
       </div>
@@ -427,7 +506,7 @@ function Takeover() {
         {board.map((cell, index) => {
           const { row, column } = getCoordinates(index)
           const isSelectedSource = selectedSource === index
-          const isSelectableSource = !isGameOver && cell === currentPlayer && selectableSources.has(index)
+          const isSelectableSource = !isGameOver && !isAiTurn && cell === currentPlayer && selectableSources.has(index)
           const destinationKind = selectedTargets.get(index)
           const isDestination = Boolean(destinationKind)
           const isLastTarget = lastMove?.to === index
@@ -447,7 +526,7 @@ function Takeover() {
               key={`${index}-${tokenAnimation ? animationCycle : 'steady'}`}
               type="button"
               onClick={() => handleCellClick(index)}
-              disabled={isGameOver}
+              disabled={isGameOver || isAiTurn}
               title={
                 isDestination
                   ? `${destinationKind === 'clone' ? 'Clone into' : 'Jump into'} row ${row + 1}, column ${column + 1}`

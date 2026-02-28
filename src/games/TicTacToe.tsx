@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import GameModeToggle, { type GameMode } from './GameModeToggle'
 import GameShell from './GameShell'
 
 type Mark = 'X' | 'O' | null
@@ -13,6 +14,8 @@ const WINNING_LINES: ReadonlyArray<readonly [number, number, number]> = [
   [0, 4, 8],
   [2, 4, 6],
 ]
+const CORNER_INDICES: ReadonlyArray<number> = [0, 2, 6, 8]
+const SIDE_INDICES: ReadonlyArray<number> = [1, 3, 5, 7]
 
 function getWinner(board: Mark[]): Exclude<Mark, null> | null {
   for (const [a, b, c] of WINNING_LINES) {
@@ -22,6 +25,47 @@ function getWinner(board: Mark[]): Exclude<Mark, null> | null {
   }
 
   return null
+}
+
+function getWinningMove(board: Mark[], mark: Exclude<Mark, null>): number | null {
+  for (let index = 0; index < board.length; index += 1) {
+    if (board[index]) {
+      continue
+    }
+
+    const nextBoard = [...board]
+    nextBoard[index] = mark
+
+    if (getWinner(nextBoard) === mark) {
+      return index
+    }
+  }
+
+  return null
+}
+
+function getAiMove(board: Mark[]): number | null {
+  const winningMove = getWinningMove(board, 'O')
+  if (winningMove !== null) {
+    return winningMove
+  }
+
+  const blockingMove = getWinningMove(board, 'X')
+  if (blockingMove !== null) {
+    return blockingMove
+  }
+
+  if (!board[4]) {
+    return 4
+  }
+
+  const openCorner = CORNER_INDICES.find((index) => !board[index])
+  if (typeof openCorner === 'number') {
+    return openCorner
+  }
+
+  const openSide = SIDE_INDICES.find((index) => !board[index])
+  return typeof openSide === 'number' ? openSide : null
 }
 
 function AnimatedMark({ mark }: { mark: Exclude<Mark, null> }) {
@@ -65,15 +109,57 @@ function AnimatedMark({ mark }: { mark: Exclude<Mark, null> }) {
 }
 
 function TicTacToe() {
+  const [mode, setMode] = useState<GameMode>('local')
   const [board, setBoard] = useState<Mark[]>(() => Array(9).fill(null))
   const [isXTurn, setIsXTurn] = useState(true)
 
   const winner = useMemo(() => getWinner(board), [board])
   const isDraw = board.every((value) => value !== null) && !winner
-  const statusText = winner ? `Winner: ${winner}` : isDraw ? "It's a draw!" : `Turn: ${isXTurn ? 'X' : 'O'}`
+  const isAiTurn = mode === 'ai' && !isXTurn && !winner && !isDraw
+  const statusText = winner
+    ? `Winner: ${winner}`
+    : isDraw
+      ? "It's a draw!"
+      : isAiTurn
+        ? 'AI is thinking...'
+        : `Turn: ${isXTurn ? 'X' : mode === 'ai' ? 'O (AI)' : 'O'}`
+
+  useEffect(() => {
+    if (!isAiTurn) {
+      return
+    }
+
+    const aiMove = getAiMove(board)
+    if (aiMove === null) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      const nextBoard = [...board]
+      nextBoard[aiMove] = 'O'
+      setIsXTurn(true)
+      setBoard(nextBoard)
+    }, 180)
+
+    return () => window.clearTimeout(timer)
+  }, [board, isAiTurn])
+
+  const resetGame = () => {
+    setBoard(Array(9).fill(null))
+    setIsXTurn(true)
+  }
+
+  const handleModeChange = (nextMode: GameMode) => {
+    if (nextMode === mode) {
+      return
+    }
+
+    setMode(nextMode)
+    resetGame()
+  }
 
   const handleCellClick = (index: number) => {
-    if (board[index] || winner) {
+    if (board[index] || winner || isDraw || isAiTurn) {
       return
     }
 
@@ -84,19 +170,19 @@ function TicTacToe() {
   }
 
   const handleReset = () => {
-    setBoard(Array(9).fill(null))
-    setIsXTurn(true)
+    resetGame()
   }
 
   return (
     <GameShell status={statusText} onReset={handleReset}>
+      <GameModeToggle mode={mode} onModeChange={handleModeChange} />
       <div className="grid grid-cols-3 gap-3">
         {board.map((mark, index) => (
           <button
             key={index}
             type="button"
             onClick={() => handleCellClick(index)}
-            disabled={Boolean(mark) || Boolean(winner)}
+            disabled={Boolean(mark) || Boolean(winner) || isDraw || isAiTurn}
             aria-label={`Cell ${index + 1}${mark ? `, ${mark}` : ''}`}
             className="touch-manipulation aspect-square rounded-xl border border-slate-600 bg-slate-800/80 transition hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
           >
