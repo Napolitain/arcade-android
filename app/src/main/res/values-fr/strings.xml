@@ -29,6 +29,7 @@
     <string name="game_president">Président</string>
     <string name="game_blackjack">Blackjack</string>
     <string name="game_rummy">Gin Rummy</string>
+    <string name="game_sortorsplode">Tri ou Boum</string>
 
     <!-- Game descriptions -->
     <string name="desc_tictactoe">Jeu de stratégie classique 3×3 pour deux joueurs.</string>
@@ -47,6 +48,7 @@
     <string name="desc_president">Débarrassez-vous de vos cartes — devenez Président, évitez le Trou.</string>
     <string name="desc_blackjack">Battez le croupier sans dépasser 21.</string>
     <string name="desc_rummy">Formez des combinaisons, réduisez le bois mort et cognez pour gagner.</string>
+    <string name="desc_sortorsplode">Triez les objets qui tombent dans les bacs avant qu\'ils explosent !</string>
 
     <!-- Common game strings -->
     <string name="player_a">Joueur A</string>
@@ -178,4 +180,13 @@
     <string name="rummy_you">Vous : %1$d</string>
     <string name="rummy_opp">Adversaire : %1$d</string>
     <string name="rummy_opp_hand">Main de l\'adversaire :</string>
+
+    <!-- Sort or Splode -->
+    <string name="sos_lives">❤️ %1$d</string>
+    <string name="sos_level">Niveau %1$d</string>
+    <string name="sos_combo">Combo x%1$d</string>
+    <string name="sos_game_over">Partie terminée !</string>
+    <string name="sos_tap_to_sort">Touchez une colonne pour trier</string>
+    <string name="sos_correct">+%1$d</string>
+    <string name="sos_round">Manche : %1$s</string>
 </resources>

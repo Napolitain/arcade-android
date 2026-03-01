@@ -29,6 +29,7 @@
     <string name="game_president">President</string>
     <string name="game_blackjack">Blackjack</string>
     <string name="game_rummy">Gin Rummy</string>
+    <string name="game_sortorsplode">Sort or Splode</string>
 
     <!-- Game descriptions -->
     <string name="desc_tictactoe">Classic 3×3 strategy game for two players.</string>
@@ -47,6 +48,7 @@
     <string name="desc_president">Shed cards first — be President, avoid being Scum.</string>
     <string name="desc_blackjack">Beat the dealer to 21 without going bust.</string>
     <string name="desc_rummy">Form melds, minimize deadwood, and knock to win.</string>
+    <string name="desc_sortorsplode">Sort falling items into bins before they explode!</string>
 
     <!-- Common game strings -->
     <string name="player_a">Player A</string>
@@ -184,4 +186,13 @@
     <string name="rummy_you">You: %1$d</string>
     <string name="rummy_opp">Opponent: %1$d</string>
     <string name="rummy_opp_hand">Opponent\'s hand:</string>
+
+    <!-- Sort or Splode -->
+    <string name="sos_lives">❤️ %1$d</string>
+    <string name="sos_level">Level %1$d</string>
+    <string name="sos_combo">Combo x%1$d</string>
+    <string name="sos_game_over">Game Over!</string>
+    <string name="sos_tap_to_sort">Tap a column to sort</string>
+    <string name="sos_correct">+%1$d</string>
+    <string name="sos_round">Round: %1$s</string>
 </resources>

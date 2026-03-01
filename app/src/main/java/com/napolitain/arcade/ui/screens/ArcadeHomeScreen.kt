@@ -71,6 +71,7 @@ import com.napolitain.arcade.ui.games.TicTacToeGame
 import com.napolitain.arcade.ui.games.PresidentGame
 import com.napolitain.arcade.ui.games.TexasHoldEmGame
 import com.napolitain.arcade.ui.games.RummyGame
+import com.napolitain.arcade.ui.games.SortOrSplodeGame
 import com.napolitain.arcade.ui.games.WordBalloonGame
 
 data class GameDef(
@@ -99,6 +100,7 @@ private val GAMES = listOf(
     GameDef("blackjack", R.string.game_blackjack, R.string.desc_blackjack, Color(0xFF2E7D32), "🃏") { BlackjackGame() },
     GameDef("president", R.string.game_president, R.string.desc_president, Color(0xFFEAB308), "👑") { PresidentGame() },
     GameDef("rummy", R.string.game_rummy, R.string.desc_rummy, Color(0xFFD97706), "🃏") { RummyGame() },
+    GameDef("sort-or-splode", R.string.game_sortorsplode, R.string.desc_sortorsplode, Color(0xFFE11D48), "💥") { SortOrSplodeGame() },
 )
 
 // Simple back-arrow icon built with vector paths (no Material Icons dependency)
