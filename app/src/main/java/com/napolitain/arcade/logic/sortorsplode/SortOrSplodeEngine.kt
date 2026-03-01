@@ -90,9 +90,11 @@ class SortOrSplodeEngine {
 
     /* ── observable state ──────────────────────────────────────────── */
 
-    var difficulty by mutableStateOf(Difficulty.NORMAL)
+    private var _difficulty = mutableStateOf(Difficulty.NORMAL)
+    var difficulty: Difficulty
+        get() = _difficulty.value
         set(value) {
-            field = value
+            _difficulty.value = value
             reset()
         }
 
