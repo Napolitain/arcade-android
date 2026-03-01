@@ -153,7 +153,7 @@ fun ReversiGame() {
         if (engine.mode == GameMode.AI) {
             GameDifficultyToggle(
                 difficulty = engine.difficulty,
-                onDifficultyChange = { engine.difficulty = it },
+                onDifficultyChange = { engine.setGameDifficulty(it) },
             )
         }
 
