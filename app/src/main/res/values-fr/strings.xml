@@ -189,4 +189,18 @@
     <string name="sos_tap_to_sort">Glissez les objets vers les bacs correspondants</string>
     <string name="sos_correct">+%1$d</string>
     <string name="sos_round">Manche : %1$s</string>
+
+    <!-- Cul de Chouette -->
+    <string name="game_culdechouette">Cul de Chouette</string>
+    <string name="desc_culdechouette">Jeu de dés de Kaamelott — combos et course aux 343 points.</string>
+    <string name="cdc_roll">Lancer !</string>
+    <string name="cdc_roll_cul">Lancer le Cul !</string>
+    <string name="cdc_grelotte">Grelotte ça picote !</string>
+    <string name="cdc_pas_mou">Pas mou, le caillou !</string>
+    <string name="cdc_reaction">TAPEZ !</string>
+    <string name="cdc_winner">Gagnant : %1$s</string>
+    <string name="cdc_points">+%1$d points</string>
+    <string name="cdc_suite_lose">-%1$d points</string>
+    <string name="cdc_your_turn">À votre tour</string>
+    <string name="cdc_ai_turn">%1$s joue…</string>
 </resources>
