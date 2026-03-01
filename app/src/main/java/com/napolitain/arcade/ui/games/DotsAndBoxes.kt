@@ -151,7 +151,7 @@ fun DotsAndBoxesGame() {
     // AI turn
     LaunchedEffect(engine.currentPlayer, engine.drawnEdges.size, mode, drawRevision) {
         if (!engine.isAiTurn(mode)) return@LaunchedEffect
-        delay(260)
+        delay(500)
         val edge = engine.chooseAiEdge(difficulty)
         if (edge != null) {
             engine.selectEdge(edge, mode, initiatedByAi = true)

@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import com.napolitain.arcade.ui.components.Difficulty
+import kotlin.math.atan2
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /* ── value types ───────────────────────────────────────────────────── */
@@ -21,8 +23,12 @@ data class FallingItem(
     val shape: ItemShape,
     val color: Color,
     val label: String,
-    val xSlot: Int,
-    val yProgress: Float = 0f,
+    val x: Float,
+    val y: Float,
+    val velocityX: Float,
+    val velocityY: Float,
+    val entryAngle: Float,
+    val spawnTime: Long,
 )
 
 data class Bin(
@@ -56,7 +62,16 @@ private val SHAPE_ITEMS = listOf(
     Triple("Diamond", Color(0xFFEC4899), ItemShape.DIAMOND),
 )
 
-private fun numberItem(category: String, id: Int): FallingItem {
+private fun numberItem(
+    category: String,
+    id: Int,
+    x: Float,
+    y: Float,
+    vx: Float,
+    vy: Float,
+    angle: Float,
+    time: Long,
+): FallingItem {
     val value = if (category == "Odd") {
         Random.nextInt(0, 50) * 2 + 1
     } else {
@@ -70,7 +85,12 @@ private fun numberItem(category: String, id: Int): FallingItem {
         shape = shape,
         color = color,
         label = value.toString(),
-        xSlot = 0,
+        x = x,
+        y = y,
+        velocityX = vx,
+        velocityY = vy,
+        entryAngle = angle,
+        spawnTime = time,
     )
 }
 
@@ -82,10 +102,12 @@ class SortOrSplodeEngine {
         const val MAX_LIVES = 3
         private const val LEVEL_UP_THRESHOLD = 10
         private const val MAX_ITEMS_ON_SCREEN = 5
-        private const val BASE_FALL_SPEED = 0.00025f
-        private const val SPEED_INCREMENT = 0.000035f
+        private const val BASE_DRIFT_SPEED = 0.00008f
+        private const val SPEED_INCREMENT = 0.000012f
         private const val SPAWN_INTERVAL_BASE_MS = 2200L
         private const val SPAWN_INTERVAL_MIN_MS = 800L
+        private const val ITEM_LIFETIME_BASE_MS = 12000L
+        private const val ITEM_LIFETIME_MIN_MS = 5000L
     }
 
     /* ── observable state ──────────────────────────────────────────── */
@@ -122,10 +144,14 @@ class SortOrSplodeEngine {
 
     val explosions = mutableStateListOf<Explosion>()
 
+    /** Set by the UI layer to exclude an item from physics while it is being dragged. */
+    var draggedItemId: Int? = null
+
     private var nextId = 0
     private var correctCount = 0
     private var roundIndex = 0
     private var timeSinceSpawnMs = 0L
+    private var gameTimeMs = 0L
 
     private val roundCycle: List<RoundType>
         get() = when (difficulty) {
@@ -162,7 +188,9 @@ class SortOrSplodeEngine {
         correctCount = 0
         roundIndex = 0
         nextId = 0
+        gameTimeMs = 0L
         timeSinceSpawnMs = SPAWN_INTERVAL_BASE_MS
+        draggedItemId = null
         items.clear()
         explosions.clear()
         setupRound()
@@ -171,7 +199,8 @@ class SortOrSplodeEngine {
     fun tick(deltaMs: Long) {
         if (gameOver) return
 
-        val speed = fallSpeed()
+        gameTimeMs += deltaMs
+        val speed = driftSpeed()
 
         // Advance explosions
         val expIter = explosions.listIterator()
@@ -182,23 +211,30 @@ class SortOrSplodeEngine {
             else expIter.set(next)
         }
 
-        // Advance items
+        // Advance items (skip the currently-dragged item)
         val expired = mutableListOf<FallingItem>()
         val iter = items.listIterator()
         while (iter.hasNext()) {
             val item = iter.next()
-            val newY = item.yProgress + speed * deltaMs
-            if (newY >= 1f) {
+            if (item.id == draggedItemId) continue
+
+            val newX = item.x + item.velocityX * speed * deltaMs
+            val newY = item.y + item.velocityY * speed * deltaMs
+            val age = gameTimeMs - item.spawnTime
+
+            if (newX < -0.15f || newX > 1.15f || newY < -0.15f || newY > 1.15f ||
+                age > itemLifetime()
+            ) {
                 expired.add(item)
                 iter.remove()
             } else {
-                iter.set(item.copy(yProgress = newY))
+                iter.set(item.copy(x = newX, y = newY))
             }
         }
 
-        // Expired items explode (lose lives)
+        // Expired items explode
         for (item in expired) {
-            loseLife(item.xSlot.toFloat() / binCount.coerceAtLeast(1), 0.95f)
+            loseLife(item.x.coerceIn(0f, 1f), item.y.coerceIn(0f, 1f))
         }
 
         // Spawn new items
@@ -207,6 +243,19 @@ class SortOrSplodeEngine {
         if (timeSinceSpawnMs >= interval && items.size < MAX_ITEMS_ON_SCREEN && !gameOver) {
             spawnItem()
             timeSinceSpawnMs = 0L
+        }
+    }
+
+    /** Called by the UI when a dragged item is moved. Resets its lifetime timer. */
+    fun updateItemPosition(itemId: Int, deltaX: Float, deltaY: Float) {
+        val idx = items.indexOfFirst { it.id == itemId }
+        if (idx >= 0) {
+            val item = items[idx]
+            items[idx] = item.copy(
+                x = (item.x + deltaX).coerceIn(-0.1f, 1.1f),
+                y = (item.y + deltaY).coerceIn(-0.1f, 1.1f),
+                spawnTime = gameTimeMs,
+            )
         }
     }
 
@@ -224,8 +273,8 @@ class SortOrSplodeEngine {
             score += points
             correctCount++
             addExplosion(
-                x = (binIndex.toFloat() + 0.5f) / binCount,
-                y = item.yProgress,
+                x = item.x,
+                y = item.y,
                 isCorrect = true,
                 text = "+$points",
             )
@@ -233,16 +282,10 @@ class SortOrSplodeEngine {
             true
         } else {
             combo = 0
-            loseLife(
-                (binIndex.toFloat() + 0.5f) / binCount,
-                item.yProgress,
-            )
+            loseLife(item.x, item.y)
             false
         }
     }
-
-    fun getLowestItem(): FallingItem? =
-        items.maxByOrNull { it.yProgress }
 
     /* ── internals ─────────────────────────────────────────────────── */
 
@@ -272,7 +315,7 @@ class SortOrSplodeEngine {
 
     private fun createItem(category: String): FallingItem {
         val id = nextId++
-        val slot = Random.nextInt(0, binCount)
+        val spawn = randomEdgeSpawn()
         return when (currentRoundType) {
             RoundType.COLOR -> {
                 val def = COLOR_ITEMS.first { it.first == category }
@@ -282,7 +325,10 @@ class SortOrSplodeEngine {
                     shape = listOf(ItemShape.CIRCLE, ItemShape.SQUARE, ItemShape.TRIANGLE, ItemShape.DIAMOND).random(),
                     color = def.second,
                     label = category.first().toString(),
-                    xSlot = slot,
+                    x = spawn.x, y = spawn.y,
+                    velocityX = spawn.vx, velocityY = spawn.vy,
+                    entryAngle = spawn.angle,
+                    spawnTime = gameTimeMs,
                 )
             }
             RoundType.SHAPE -> {
@@ -291,23 +337,76 @@ class SortOrSplodeEngine {
                     id = id,
                     category = category,
                     shape = def.third,
-                    color = listOf(Color(0xFFEF4444), Color(0xFF3B82F6), Color(0xFF22C55E), Color(0xFFEAB308)).random(),
+                    color = listOf(
+                        Color(0xFFEF4444), Color(0xFF3B82F6),
+                        Color(0xFF22C55E), Color(0xFFEAB308),
+                    ).random(),
                     label = category.first().toString(),
-                    xSlot = slot,
+                    x = spawn.x, y = spawn.y,
+                    velocityX = spawn.vx, velocityY = spawn.vy,
+                    entryAngle = spawn.angle,
+                    spawnTime = gameTimeMs,
                 )
             }
             RoundType.NUMBER -> {
-                numberItem(category, id).copy(xSlot = slot)
+                numberItem(
+                    category, id,
+                    spawn.x, spawn.y, spawn.vx, spawn.vy, spawn.angle,
+                    gameTimeMs,
+                )
             }
         }
     }
 
-    private fun fallSpeed(): Float {
-        val base = BASE_FALL_SPEED + (level - 1) * SPEED_INCREMENT
+    private data class SpawnData(
+        val x: Float, val y: Float,
+        val vx: Float, val vy: Float,
+        val angle: Float,
+    )
+
+    private fun randomEdgeSpawn(): SpawnData {
+        // Target: a random point in the centre play-area (above bins)
+        val targetX = 0.2f + Random.nextFloat() * 0.6f
+        val targetY = 0.15f + Random.nextFloat() * 0.45f
+
+        val edge = Random.nextInt(8)
+        val (sx, sy) = when (edge) {
+            0 -> -0.08f to (0.1f + Random.nextFloat() * 0.6f)   // left
+            1 -> 1.08f to (0.1f + Random.nextFloat() * 0.6f)    // right
+            2 -> (0.1f + Random.nextFloat() * 0.8f) to -0.08f   // top
+            3 -> (0.1f + Random.nextFloat() * 0.8f) to -0.08f   // top (extra weight)
+            4 -> -0.08f to -0.08f                                 // top-left corner
+            5 -> 1.08f to -0.08f                                  // top-right corner
+            6 -> -0.08f to 0.7f                                   // mid-left low
+            7 -> 1.08f to 0.7f                                    // mid-right low
+            else -> 0.5f to -0.08f
+        }
+
+        val dx = targetX - sx
+        val dy = targetY - sy
+        val angle = atan2(dy.toDouble(), dx.toDouble()).toFloat()
+        val mag = sqrt((dx * dx + dy * dy).toDouble()).toFloat().coerceAtLeast(0.1f)
+        val vx = dx / mag + (Random.nextFloat() - 0.5f) * 0.3f
+        val vy = dy / mag + (Random.nextFloat() - 0.5f) * 0.3f
+
+        return SpawnData(sx, sy, vx, vy, angle)
+    }
+
+    private fun driftSpeed(): Float {
+        val base = BASE_DRIFT_SPEED + (level - 1) * SPEED_INCREMENT
         return when (difficulty) {
             Difficulty.EASY -> base * 0.65f
             Difficulty.NORMAL -> base
             Difficulty.HARD -> base * 1.45f
+        }
+    }
+
+    private fun itemLifetime(): Long {
+        val base = (ITEM_LIFETIME_BASE_MS - (level - 1) * 400L).coerceAtLeast(ITEM_LIFETIME_MIN_MS)
+        return when (difficulty) {
+            Difficulty.EASY -> (base * 1.4).toLong()
+            Difficulty.NORMAL -> base
+            Difficulty.HARD -> (base * 0.7).toLong()
         }
     }
 

@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,24 +55,26 @@ import kotlin.math.sin
 
 /* ── colors ─────────────────────────────────────────────────────────── */
 
-private val BinColors = listOf(
-    Color(0xFF1E293B),
-    Color(0xFF1A2332),
-    Color(0xFF1E2A1E),
-    Color(0xFF2A1E1E),
-)
-private val BinBorders = listOf(
-    Color(0xFF3B82F6),
-    Color(0xFF22C55E),
-    Color(0xFFEF4444),
-    Color(0xFFEAB308),
-)
 private val ExplosionOuter = Color(0xFFFF6B00)
 private val ExplosionMiddle = Color(0xFFFF4500)
 private val ExplosionInner = Color(0xFFDC2626)
 private val CorrectGlow = Color(0xFF4ADE80)
 private val ComboColor = Color(0xFFFBBF24)
 private val GameAreaBg = Color(0xFF0F172A)
+
+private fun binColorForCategory(category: String): Color = when (category) {
+    "Red" -> Color(0xFFEF4444)
+    "Blue" -> Color(0xFF3B82F6)
+    "Green" -> Color(0xFF22C55E)
+    "Yellow" -> Color(0xFFEAB308)
+    "Circle" -> Color(0xFF8B5CF6)
+    "Square" -> Color(0xFFF97316)
+    "Triangle" -> Color(0xFF06B6D4)
+    "Diamond" -> Color(0xFFEC4899)
+    "Odd" -> Color(0xFFF59E0B)
+    "Even" -> Color(0xFF14B8A6)
+    else -> Color(0xFF6B7280)
+}
 
 /* ── shape drawing helpers ─────────────────────────────────────────── */
 
@@ -168,6 +173,11 @@ fun SortOrSplodeGame() {
     val engine = remember { SortOrSplodeEngine() }
     val textMeasurer = rememberTextMeasurer()
 
+    // Drag state
+    var draggedItemId by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetX by remember { mutableStateOf(0f) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+
     // Game loop
     LaunchedEffect(engine.gameOver) {
         if (engine.gameOver) return@LaunchedEffect
@@ -192,6 +202,18 @@ fun SortOrSplodeGame() {
         label = "wobble",
     )
 
+    // Bin glow/pulse animation
+    val glowTransition = rememberInfiniteTransition(label = "glow")
+    val glowAlpha by glowTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "glow",
+    )
+
     // Combo flash
     val comboFlash = remember { Animatable(0f) }
     LaunchedEffect(engine.combo) {
@@ -204,12 +226,15 @@ fun SortOrSplodeGame() {
     val livesText = stringResource(R.string.sos_lives, engine.lives)
     val levelText = stringResource(R.string.sos_level, engine.level)
     val comboText = if (engine.combo > 1) stringResource(R.string.sos_combo, engine.combo) else ""
-    val roundLabel = stringResource(R.string.sos_round, engine.currentRoundType.name.lowercase()
-        .replaceFirstChar { it.uppercase() })
+    val roundLabel = stringResource(
+        R.string.sos_round,
+        engine.currentRoundType.name.lowercase().replaceFirstChar { it.uppercase() },
+    )
 
     GameShell(
         title = stringResource(R.string.game_sortorsplode),
-        status = "$livesText  $levelText  $roundLabel" + if (comboText.isNotEmpty()) "  $comboText" else "",
+        status = "$livesText  $levelText  $roundLabel" +
+            if (comboText.isNotEmpty()) "  $comboText" else "",
         score = engine.score.toString(),
         onReset = { engine.reset() },
     ) {
@@ -237,28 +262,79 @@ fun SortOrSplodeGame() {
 
         Spacer(Modifier.height(4.dp))
 
-        // Game canvas
+        // Game canvas with drag-and-drop
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(0.65f)
                 .pointerInput(engine.gameOver, engine.binCount) {
                     if (engine.gameOver) return@pointerInput
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val pos = event.changes.firstOrNull()?.position ?: continue
-                            if (event.changes.firstOrNull()?.pressed == true) {
-                                event.changes.forEach { it.consume() }
-                                val colWidth = size.width.toFloat() / engine.binCount
-                                val binIdx = (pos.x / colWidth).toInt().coerceIn(0, engine.binCount - 1)
-                                val lowest = engine.getLowestItem()
-                                if (lowest != null) {
-                                    engine.sortItem(lowest.id, binIdx)
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            val canvasW = size.width.toFloat()
+                            val canvasH = size.height.toFloat()
+                            val bc = engine.binCount.coerceAtLeast(1)
+                            val colW = canvasW / bc
+                            val hitRadius = colW * 0.32f
+
+                            var bestId: Int? = null
+                            var bestDist = hitRadius * hitRadius
+                            for (item in engine.items) {
+                                val ix = item.x * canvasW
+                                val iy = item.y * canvasH
+                                val dx = ix - offset.x
+                                val dy = iy - offset.y
+                                val dist = dx * dx + dy * dy
+                                if (dist < bestDist) {
+                                    bestDist = dist
+                                    bestId = item.id
                                 }
                             }
-                        }
-                    }
+                            if (bestId != null) {
+                                draggedItemId = bestId
+                                engine.draggedItemId = bestId
+                                dragOffsetX = 0f
+                                dragOffsetY = 0f
+                            }
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            val id = draggedItemId
+                            if (id != null) {
+                                val canvasW = size.width.toFloat()
+                                val canvasH = size.height.toFloat()
+                                val dx = dragAmount.x / canvasW
+                                val dy = dragAmount.y / canvasH
+                                dragOffsetX += dx
+                                dragOffsetY += dy
+                                engine.updateItemPosition(id, dx, dy)
+                            }
+                        },
+                        onDragEnd = {
+                            val id = draggedItemId
+                            if (id != null) {
+                                val item = engine.items.firstOrNull { it.id == id }
+                                if (item != null) {
+                                    val binH = 0.12f
+                                    val binYStart = 1f - binH
+                                    if (item.y >= binYStart - 0.04f) {
+                                        val bc = engine.binCount.coerceAtLeast(1)
+                                        val cw = 1f / bc
+                                        val binIdx = (item.x / cw).toInt()
+                                            .coerceIn(0, bc - 1)
+                                        engine.sortItem(id, binIdx)
+                                    }
+                                    // Otherwise item stays and physics resumes
+                                }
+                            }
+                            draggedItemId = null
+                            engine.draggedItemId = null
+                        },
+                        onDragCancel = {
+                            draggedItemId = null
+                            engine.draggedItemId = null
+                        },
+                    )
                 },
         ) {
             val w = size.width
@@ -267,50 +343,76 @@ fun SortOrSplodeGame() {
             val colW = w / binCount
             val binH = h * 0.12f
             val binY = h - binH
-            val itemRadius = colW * 0.16f
+            val itemRadius = (w * 0.07f).coerceAtMost(colW * 0.22f)
 
             // Background
             drawRect(GameAreaBg)
 
-            // Column separators
-            for (i in 1 until binCount) {
-                val x = colW * i
-                drawLine(
-                    Color.White.copy(alpha = 0.06f),
-                    Offset(x, 0f),
-                    Offset(x, binY),
-                    strokeWidth = 1f,
-                )
+            // Determine hover state for drag-over-bin highlighting
+            val dragItem = engine.items.firstOrNull { it.id == draggedItemId }
+            val hoveredBinIdx = if (dragItem != null &&
+                dragItem.y >= (1f - 0.12f - 0.04f)
+            ) {
+                (dragItem.x * w / colW).toInt().coerceIn(0, binCount - 1)
+            } else {
+                -1
             }
-
-            // Danger zone gradient near bins
-            drawRect(
-                Color(0x18FF4444),
-                Offset(0f, binY - h * 0.08f),
-                Size(w, h * 0.08f),
-            )
+            val isCorrectHover = hoveredBinIdx >= 0 && dragItem != null &&
+                engine.bins.getOrNull(hoveredBinIdx)?.category == dragItem.category
 
             // Draw bins
             engine.bins.forEachIndexed { i, bin ->
                 val bx = colW * i + colW * 0.05f
                 val bw = colW * 0.9f
-                val borderColor = BinBorders[i % BinBorders.size]
+                val binColor = binColorForCategory(bin.category)
+                val isHovered = i == hoveredBinIdx
+
+                // Glow behind bin (pulsing)
+                val gAlpha = when {
+                    isHovered && isCorrectHover -> 0.6f
+                    isHovered -> 0.3f
+                    else -> glowAlpha * 0.15f
+                }
+                drawRoundRect(
+                    binColor.copy(alpha = gAlpha),
+                    Offset(bx - 4f, binY),
+                    Size(bw + 8f, binH),
+                    CornerRadius(16f),
+                )
 
                 // Bin background
                 drawRoundRect(
-                    BinColors[i % BinColors.size],
+                    binColor.copy(alpha = 0.2f),
                     Offset(bx, binY + 4f),
                     Size(bw, binH - 8f),
                     CornerRadius(12f),
                 )
-                // Bin border
+
+                // Bin border (pulsing)
+                val borderAlpha = when {
+                    isHovered && isCorrectHover -> 1f
+                    isHovered -> 0.7f
+                    else -> glowAlpha
+                }
+                val borderWidth = if (isHovered && isCorrectHover) 5f else 3f
                 drawRoundRect(
-                    borderColor,
+                    binColor.copy(alpha = borderAlpha),
                     Offset(bx, binY + 4f),
                     Size(bw, binH - 8f),
                     CornerRadius(12f),
-                    style = Stroke(3f),
+                    style = Stroke(borderWidth),
                 )
+
+                // Correct-hover success ring
+                if (isHovered && isCorrectHover) {
+                    drawRoundRect(
+                        CorrectGlow.copy(alpha = 0.5f),
+                        Offset(bx - 2f, binY + 2f),
+                        Size(bw + 4f, binH - 4f),
+                        CornerRadius(14f),
+                        style = Stroke(3f),
+                    )
+                }
 
                 // Bin label
                 val labelStyle = TextStyle(
@@ -328,25 +430,28 @@ fun SortOrSplodeGame() {
                 )
             }
 
-            // Draw falling items
+            // Draw floating items
             for (item in engine.items) {
-                val cx = colW * item.xSlot + colW * 0.5f
-                val cy = item.yProgress * (binY - itemRadius * 2) + itemRadius
+                val isDragged = item.id == draggedItemId
+                val cx = item.x * w
+                val cy = item.y * h
+                val scale = if (isDragged) 1.3f else 1f
+                val r = itemRadius * scale
 
                 // Shadow
                 drawCircle(
-                    Color.Black.copy(alpha = 0.25f),
-                    itemRadius + 3f,
-                    Offset(cx + 2f, cy + 2f),
+                    Color.Black.copy(alpha = if (isDragged) 0.4f else 0.25f),
+                    r + 3f,
+                    Offset(cx + 2f, cy + 4f),
                 )
 
                 // Item shape
-                drawItemShape(item.shape, Offset(cx, cy), itemRadius, item.color, wobble * (1f + item.yProgress))
+                drawItemShape(item.shape, Offset(cx, cy), r, item.color, wobble)
 
                 // Item label
                 val itemLabelStyle = TextStyle(
                     color = Color.White,
-                    fontSize = 11.sp,
+                    fontSize = (if (isDragged) 14 else 11).sp,
                     fontWeight = FontWeight.Bold,
                 )
                 val labelMeasured = textMeasurer.measure(item.label, itemLabelStyle)
@@ -358,11 +463,11 @@ fun SortOrSplodeGame() {
                     ),
                 )
 
-                // Highlight the lowest item
-                if (item == engine.getLowestItem()) {
+                // Dragged item glow ring
+                if (isDragged) {
                     drawCircle(
-                        Color.White.copy(alpha = 0.15f + 0.1f * wobble),
-                        itemRadius + 5f,
+                        Color.White.copy(alpha = 0.25f),
+                        r + 6f,
                         Offset(cx, cy),
                         style = Stroke(2.5f),
                     )

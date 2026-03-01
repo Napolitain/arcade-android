@@ -77,7 +77,7 @@ fun ConnectFourGame() {
     // AI move with delay
     LaunchedEffect(engine.isAiTurn, engine.board) {
         if (engine.isAiTurn) {
-            delay(180)
+            delay(700)
             engine.performAiMove()
         }
     }

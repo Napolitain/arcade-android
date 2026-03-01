@@ -79,7 +79,7 @@ fun ChessGame() {
     // AI move trigger
     LaunchedEffect(engine.board.toList(), engine.currentPlayer, isAiTurn) {
         if (!isAiTurn) return@LaunchedEffect
-        delay(300)
+        delay(700)
         engine.triggerAiMove()
     }
 

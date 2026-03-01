@@ -60,7 +60,7 @@ fun TicTacToeGame() {
     // AI move trigger with small delay matching the React version
     LaunchedEffect(engine.board.toList(), engine.isAiTurn) {
         if (!engine.isAiTurn) return@LaunchedEffect
-        delay(180)
+        delay(900)
         engine.triggerAiMove()
     }
 

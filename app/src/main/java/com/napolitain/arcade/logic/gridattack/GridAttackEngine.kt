@@ -14,7 +14,7 @@ const val GRID_SIZE = 6
 const val CELL_COUNT = GRID_SIZE * GRID_SIZE
 val SHIP_SIZES = intArrayOf(3, 2, 2)
 private val ROW_LABELS = charArrayOf('A', 'B', 'C', 'D', 'E', 'F')
-private const val CPU_DELAY_MS = 650L
+private const val CPU_DELAY_MS = 1100L
 
 /* ── value types ───────────────────────────────────────────────────── */
 

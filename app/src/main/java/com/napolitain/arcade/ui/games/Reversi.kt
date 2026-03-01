@@ -75,7 +75,7 @@ fun ReversiGame() {
     // AI move with small delay
     LaunchedEffect(engine.board.toList(), engine.isAiTurn) {
         if (!engine.isAiTurn) return@LaunchedEffect
-        delay(280)
+        delay(600)
         engine.performAiMove()
     }
 

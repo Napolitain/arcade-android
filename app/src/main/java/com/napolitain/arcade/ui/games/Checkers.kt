@@ -88,7 +88,7 @@ fun CheckersGame() {
     // AI move trigger
     LaunchedEffect(engine.board.toList(), engine.currentPlayer, engine.forcedFromIndex, isAiTurn) {
         if (!isAiTurn) return@LaunchedEffect
-        delay(280)
+        delay(600)
         engine.triggerAiMove()
     }
 
