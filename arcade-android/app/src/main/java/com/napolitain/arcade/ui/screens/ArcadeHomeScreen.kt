@@ -57,7 +57,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.napolitain.arcade.R
 import com.napolitain.arcade.ui.games.BalanceGame
+import com.napolitain.arcade.ui.games.BlackjackGame
 import com.napolitain.arcade.ui.games.CheckersGame
+import com.napolitain.arcade.ui.games.ChessGame
 import com.napolitain.arcade.ui.games.ConnectFourGame
 import com.napolitain.arcade.ui.games.DotsAndBoxesGame
 import com.napolitain.arcade.ui.games.Game2048
@@ -66,6 +68,9 @@ import com.napolitain.arcade.ui.games.ReversiGame
 import com.napolitain.arcade.ui.games.SnakeGame
 import com.napolitain.arcade.ui.games.TakeoverGame
 import com.napolitain.arcade.ui.games.TicTacToeGame
+import com.napolitain.arcade.ui.games.PresidentGame
+import com.napolitain.arcade.ui.games.TexasHoldEmGame
+import com.napolitain.arcade.ui.games.RummyGame
 import com.napolitain.arcade.ui.games.WordBalloonGame
 
 data class GameDef(
@@ -87,8 +92,13 @@ private val GAMES = listOf(
     GameDef("word-balloon", R.string.game_wordballoon, R.string.desc_wordballoon, Color(0xFFEC4899), "🎈") { WordBalloonGame() },
     GameDef("grid-attack", R.string.game_gridattack, R.string.desc_gridattack, Color(0xFF3B82F6), "💣") { GridAttackGame() },
     GameDef("checkers", R.string.game_checkers, R.string.desc_checkers, Color(0xFFEF4444), "♛") { CheckersGame() },
+    GameDef("chess", R.string.game_chess, R.string.desc_chess, Color(0xFF78909C), "♚") { ChessGame() },
     GameDef("balance", R.string.game_balance, R.string.desc_balance, Color(0xFF14B8A6), "⚖") { BalanceGame() },
     GameDef("takeover", R.string.game_takeover, R.string.desc_takeover, Color(0xFF6366F1), "🏴") { TakeoverGame() },
+    GameDef("texas-holdem", R.string.game_texasholdem, R.string.desc_texasholdem, Color(0xFF059669), "🃏") { TexasHoldEmGame() },
+    GameDef("blackjack", R.string.game_blackjack, R.string.desc_blackjack, Color(0xFF2E7D32), "🃏") { BlackjackGame() },
+    GameDef("president", R.string.game_president, R.string.desc_president, Color(0xFFEAB308), "👑") { PresidentGame() },
+    GameDef("rummy", R.string.game_rummy, R.string.desc_rummy, Color(0xFFD97706), "🃏") { RummyGame() },
 )
 
 // Simple back-arrow icon built with vector paths (no Material Icons dependency)

@@ -22,8 +22,13 @@
     <string name="game_wordballoon">Mot Ballon</string>
     <string name="game_gridattack">Bataille Navale</string>
     <string name="game_checkers">Dames</string>
+    <string name="game_chess">Échecs</string>
     <string name="game_balance">Équilibre</string>
     <string name="game_takeover">Conquête</string>
+    <string name="game_texasholdem">Texas Hold \'Em</string>
+    <string name="game_president">Président</string>
+    <string name="game_blackjack">Blackjack</string>
+    <string name="game_rummy">Gin Rummy</string>
 
     <!-- Game descriptions -->
     <string name="desc_tictactoe">Jeu de stratégie classique 3×3 pour deux joueurs.</string>
@@ -35,8 +40,13 @@
     <string name="desc_wordballoon">Devinez les lettres avant que le ballon n\'éclate.</string>
     <string name="desc_gridattack">Traquez les navires ennemis dans une bataille tactique.</string>
     <string name="desc_checkers">Capturez en diagonale, enchaînez les sauts et couronnez les dames.</string>
+    <string name="desc_chess">Stratégie classique : matez le roi adverse.</string>
     <string name="desc_balance">Placez des poids et maintenez la poutre en équilibre.</string>
     <string name="desc_takeover">Étendez-vous, sautez et convertissez les jetons adverses.</string>
+    <string name="desc_texasholdem">Jouez au poker contre trois adversaires IA.</string>
+    <string name="desc_president">Débarrassez-vous de vos cartes — devenez Président, évitez le Trou.</string>
+    <string name="desc_blackjack">Battez le croupier sans dépasser 21.</string>
+    <string name="desc_rummy">Formez des combinaisons, réduisez le bois mort et cognez pour gagner.</string>
 
     <!-- Common game strings -->
     <string name="player_a">Joueur A</string>
@@ -110,6 +120,12 @@
     <string name="checkers_capture_rule">Règle de prise obligatoire : seuls les coups de capture sont autorisés.</string>
     <string name="checkers_instruction">Touchez un pion mobile, puis une case de destination en surbrillance.</string>
 
+    <!-- Chess -->
+    <string name="chess_white">Blanc</string>
+    <string name="chess_black">Noir</string>
+    <string name="chess_moves">Coups : %1$d</string>
+    <string name="chess_instruction">Touchez une pièce, puis une case de destination en surbrillance.</string>
+
     <!-- Balance -->
     <string name="balance_start_round">Commencer la manche %1$d</string>
     <string name="balance_ai_player">IA (Joueur B)</string>
@@ -128,4 +144,38 @@
     <string name="takeover_source">Source</string>
     <string name="takeover_clone">Clone</string>
     <string name="takeover_jump">Saut</string>
+
+    <!-- Blackjack -->
+    <string name="bj_place_bet">Placez votre mise</string>
+    <string name="bj_your_turn">À vous — Tirer, Rester ou Doubler</string>
+    <string name="bj_dealer_turn">Le croupier tire…</string>
+    <string name="bj_blackjack">Blackjack !</string>
+    <string name="bj_you_win">Vous gagnez !</string>
+    <string name="bj_dealer_wins">Le croupier gagne</string>
+    <string name="bj_push">Égalité</string>
+    <string name="bj_bust">Vous avez sauté !</string>
+    <string name="bj_dealer_busts">Le croupier saute !</string>
+    <string name="bj_hit">Tirer</string>
+    <string name="bj_stand">Rester</string>
+    <string name="bj_double_down">Doubler</string>
+    <string name="bj_new_hand">Nouvelle main</string>
+    <string name="bj_chips">%1$d jetons</string>
+
+    <!-- Gin Rummy -->
+    <string name="rummy_draw">À vous — piochez une carte</string>
+    <string name="rummy_discard">Touchez une carte pour sélectionner, touchez à nouveau pour défausser</string>
+    <string name="rummy_opponent">L\'adversaire joue…</string>
+    <string name="rummy_knock_choice">Cogner ou continuer ?</string>
+    <string name="rummy_gin_choice">GIN ! Touchez Cogner pour réclamer le bonus.</string>
+    <string name="rummy_knock">Cogner</string>
+    <string name="rummy_gin">GIN !</string>
+    <string name="rummy_continue">Continuer</string>
+    <string name="rummy_new_round">Nouvelle manche</string>
+    <string name="rummy_new_game">Nouvelle partie</string>
+    <string name="rummy_deadwood">Bois mort : %1$d</string>
+    <string name="rummy_stock">Pioche (%1$d)</string>
+    <string name="rummy_discard_pile">Défausse</string>
+    <string name="rummy_you">Vous : %1$d</string>
+    <string name="rummy_opp">Adversaire : %1$d</string>
+    <string name="rummy_opp_hand">Main de l\'adversaire :</string>
 </resources>

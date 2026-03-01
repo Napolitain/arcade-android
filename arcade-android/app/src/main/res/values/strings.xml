@@ -22,8 +22,13 @@
     <string name="game_wordballoon">Word Balloon</string>
     <string name="game_gridattack">Grid Attack</string>
     <string name="game_checkers">Checkers</string>
+    <string name="game_chess">Chess</string>
     <string name="game_balance">Balance</string>
     <string name="game_takeover">Takeover</string>
+    <string name="game_texasholdem">Texas Hold \'Em</string>
+    <string name="game_president">President</string>
+    <string name="game_blackjack">Blackjack</string>
+    <string name="game_rummy">Gin Rummy</string>
 
     <!-- Game descriptions -->
     <string name="desc_tictactoe">Classic 3×3 strategy game for two players.</string>
@@ -35,8 +40,13 @@
     <string name="desc_wordballoon">Guess letters before the balloon pops.</string>
     <string name="desc_gridattack">Hunt enemy ships in a tactical sea battle.</string>
     <string name="desc_checkers">Capture diagonally, chain jumps, and crown kings.</string>
+    <string name="desc_chess">Classic strategy: checkmate the enemy king.</string>
     <string name="desc_balance">Place weighted pieces and keep the beam stable.</string>
     <string name="desc_takeover">Expand, jump, and convert nearby enemy tokens.</string>
+    <string name="desc_texasholdem">Play poker against three AI opponents.</string>
+    <string name="desc_president">Shed cards first — be President, avoid being Scum.</string>
+    <string name="desc_blackjack">Beat the dealer to 21 without going bust.</string>
+    <string name="desc_rummy">Form melds, minimize deadwood, and knock to win.</string>
 
     <!-- Common game strings -->
     <string name="player_a">Player A</string>
@@ -116,6 +126,12 @@
     <string name="checkers_capture_rule">Capture-first rule active: only capturing moves are allowed.</string>
     <string name="checkers_instruction">Tap a movable piece, then a highlighted destination square.</string>
 
+    <!-- Chess -->
+    <string name="chess_white">White</string>
+    <string name="chess_black">Black</string>
+    <string name="chess_moves">Moves: %1$d</string>
+    <string name="chess_instruction">Tap a piece, then a highlighted destination square.</string>
+
     <!-- Balance -->
     <string name="balance_start_round">Start round %1$d</string>
     <string name="balance_ai_player">AI (Player B)</string>
@@ -128,10 +144,44 @@
     <string name="balance_ai_choosing">AI is choosing a weight and slot.</string>
     <string name="balance_choose_weight">Choose a weight for Player %1$s, then tap an empty slot.</string>
 
+    <!-- Blackjack -->
+    <string name="bj_place_bet">Place your bet</string>
+    <string name="bj_your_turn">Your turn — Hit, Stand, or Double Down</string>
+    <string name="bj_dealer_turn">Dealer is drawing…</string>
+    <string name="bj_blackjack">Blackjack!</string>
+    <string name="bj_you_win">You win!</string>
+    <string name="bj_dealer_wins">Dealer wins</string>
+    <string name="bj_push">Push — tie</string>
+    <string name="bj_bust">Bust!</string>
+    <string name="bj_dealer_busts">Dealer busts!</string>
+    <string name="bj_hit">Hit</string>
+    <string name="bj_stand">Stand</string>
+    <string name="bj_double_down">Double</string>
+    <string name="bj_new_hand">New Hand</string>
+    <string name="bj_chips">%1$d chips</string>
+
     <!-- Takeover -->
     <string name="takeover_blue">Blue</string>
     <string name="takeover_orange">Orange</string>
     <string name="takeover_source">Source</string>
     <string name="takeover_clone">Clone</string>
     <string name="takeover_jump">Jump</string>
+
+    <!-- Gin Rummy -->
+    <string name="rummy_draw">Your turn — draw a card</string>
+    <string name="rummy_discard">Tap a card to select, tap again to discard</string>
+    <string name="rummy_opponent">Opponent is playing…</string>
+    <string name="rummy_knock_choice">Knock or continue?</string>
+    <string name="rummy_gin_choice">GIN! Tap Knock to claim bonus.</string>
+    <string name="rummy_knock">Knock</string>
+    <string name="rummy_gin">GIN!</string>
+    <string name="rummy_continue">Continue</string>
+    <string name="rummy_new_round">New Round</string>
+    <string name="rummy_new_game">New Game</string>
+    <string name="rummy_deadwood">Deadwood: %1$d</string>
+    <string name="rummy_stock">Stock (%1$d)</string>
+    <string name="rummy_discard_pile">Discard</string>
+    <string name="rummy_you">You: %1$d</string>
+    <string name="rummy_opp">Opponent: %1$d</string>
+    <string name="rummy_opp_hand">Opponent\'s hand:</string>
 </resources>
