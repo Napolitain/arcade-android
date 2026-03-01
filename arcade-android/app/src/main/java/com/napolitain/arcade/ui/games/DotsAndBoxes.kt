@@ -1,6 +1,11 @@
 package com.napolitain.arcade.ui.games
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
@@ -21,13 +26,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextMeasurer
@@ -56,6 +65,7 @@ import com.napolitain.arcade.ui.components.GameModeToggle
 import com.napolitain.arcade.ui.components.GameShell
 import com.napolitain.arcade.ui.components.Difficulty
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // Player colours
 private val PlayerALine = Color(0xFF22D3EE)
@@ -95,20 +105,46 @@ fun DotsAndBoxesGame() {
     var mode by remember { mutableStateOf(GameMode.LOCAL) }
     var difficulty by remember { mutableStateOf(Difficulty.NORMAL) }
 
-    // Track which edges have been animated already (keyed by drawRevision to reset on game reset)
     var drawRevision by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
 
-    // Animate each new edge via an Animatable keyed on lastEdgeId
-    val lineAnimProgress = remember { Animatable(1f) }
-    val animatingEdgeId = remember { mutableStateOf<String?>(null) }
+    // Per-edge draw animation (0→1 line progress)
+    val edgeAnimProgress = remember { mutableMapOf<String, Animatable<Float, AnimationVector1D>>() }
+    // Per-box fill animation (0→1 scale from centre)
+    val boxAnimProgress = remember { mutableMapOf<String, Animatable<Float, AnimationVector1D>>() }
 
-    LaunchedEffect(engine.lastEdgeId, drawRevision) {
-        val eid = engine.lastEdgeId
-        if (eid != null) {
-            animatingEdgeId.value = eid
-            lineAnimProgress.snapTo(0f)
-            lineAnimProgress.animateTo(1f, tween(180))
-            animatingEdgeId.value = null
+    // Pointer position for dot proximity glow
+    var nearestDotIndex by remember { mutableStateOf(-1) }
+    val dotGlowScale by animateFloatAsState(
+        targetValue = if (nearestDotIndex >= 0) 1.8f else 1f,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessHigh),
+        label = "dotGlow",
+    )
+
+    // Launch per-edge and per-box animations when new edges/boxes appear
+    LaunchedEffect(engine.drawnEdges.size, drawRevision) {
+        if (engine.drawnEdges.isEmpty()) {
+            edgeAnimProgress.clear()
+            boxAnimProgress.clear()
+            return@LaunchedEffect
+        }
+        for (edgeId in engine.drawnEdges.keys) {
+            if (edgeId !in edgeAnimProgress) {
+                val anim = Animatable(0f)
+                edgeAnimProgress[edgeId] = anim
+                scope.launch {
+                    anim.animateTo(1f, tween(250, easing = FastOutSlowInEasing))
+                }
+            }
+        }
+        for (boxId in engine.claimedBoxes.keys) {
+            if (boxId !in boxAnimProgress) {
+                val anim = Animatable(0f)
+                boxAnimProgress[boxId] = anim
+                scope.launch {
+                    anim.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium))
+                }
+            }
         }
     }
 
@@ -129,6 +165,9 @@ fun DotsAndBoxesGame() {
         status = engine.statusText(mode),
         onReset = {
             engine.reset()
+            edgeAnimProgress.clear()
+            boxAnimProgress.clear()
+            nearestDotIndex = -1
             drawRevision++
         },
     ) {
@@ -138,6 +177,9 @@ fun DotsAndBoxesGame() {
                 if (newMode != mode) {
                     mode = newMode
                     engine.reset()
+                    edgeAnimProgress.clear()
+                    boxAnimProgress.clear()
+                    nearestDotIndex = -1
                     drawRevision++
                 }
             },
@@ -182,6 +224,34 @@ fun DotsAndBoxesGame() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
+                        .pointerInput(Unit) {
+                            val pScale = size.width.toFloat() / BOARD_SIZE
+                            val glowThreshold = CELL_SIZE * 0.45f
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull()
+                                    if (change != null && change.pressed) {
+                                        val bx = change.position.x / pScale
+                                        val by = change.position.y / pScale
+                                        var bestIdx = -1
+                                        var bestDist = Float.MAX_VALUE
+                                        DOT_COORDINATES.forEachIndexed { i, dot ->
+                                            val dx = bx - dot.x
+                                            val dy = by - dot.y
+                                            val dist = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                                            if (dist < glowThreshold && dist < bestDist) {
+                                                bestDist = dist
+                                                bestIdx = i
+                                            }
+                                        }
+                                        nearestDotIndex = bestIdx
+                                    } else {
+                                        nearestDotIndex = -1
+                                    }
+                                }
+                            }
+                        }
                         .pointerInput(isAiTurn, isGameOver, engine.currentPlayer, drawRevision) {
                             if (isAiTurn || isGameOver) return@pointerInput
                             val scale = size.width / BOARD_SIZE
@@ -205,42 +275,45 @@ fun DotsAndBoxesGame() {
                 ) {
                     val scale = size.width / BOARD_SIZE
 
-                    // Filled boxes
+                    // Filled boxes (animated scale from centre)
                     for (box in BOX_DEFINITIONS) {
                         val owner = engine.claimedBoxes[box.id] ?: continue
                         val inset = EDGE_STROKE_WIDTH / 2f
                         val isRecent = box.id in engine.lastClaimedBoxIds
-                        drawRoundRect(
-                            color = fillColor(owner),
-                            topLeft = Offset((box.x + inset) * scale, (box.y + inset) * scale),
-                            size = Size(
-                                (CELL_SIZE - EDGE_STROKE_WIDTH) * scale,
-                                (CELL_SIZE - EDGE_STROKE_WIDTH) * scale,
-                            ),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f * scale),
-                        )
-                        // Border
-                        drawRoundRect(
-                            color = lineColor(owner),
-                            topLeft = Offset((box.x + inset) * scale, (box.y + inset) * scale),
-                            size = Size(
-                                (CELL_SIZE - EDGE_STROKE_WIDTH) * scale,
-                                (CELL_SIZE - EDGE_STROKE_WIDTH) * scale,
-                            ),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f * scale),
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                width = (if (isRecent) 3f else 1.5f) * scale,
-                            ),
-                        )
-                        // Owner label
-                        drawOwnerLabel(
-                            textMeasurer = textMeasurer,
-                            label = owner.label,
-                            cx = (box.x + CELL_SIZE / 2f) * scale,
-                            cy = (box.y + CELL_SIZE / 2f) * scale,
-                            color = textColor(owner),
-                            scale = scale,
-                        )
+                        val bScale = boxAnimProgress[box.id]?.value ?: 0f
+                        val cx = (box.x + CELL_SIZE / 2f) * scale
+                        val cy = (box.y + CELL_SIZE / 2f) * scale
+                        scale(bScale, pivot = Offset(cx, cy)) {
+                            drawRoundRect(
+                                color = fillColor(owner),
+                                topLeft = Offset((box.x + inset) * scale, (box.y + inset) * scale),
+                                size = Size(
+                                    (CELL_SIZE - EDGE_STROKE_WIDTH) * scale,
+                                    (CELL_SIZE - EDGE_STROKE_WIDTH) * scale,
+                                ),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f * scale),
+                            )
+                            drawRoundRect(
+                                color = lineColor(owner),
+                                topLeft = Offset((box.x + inset) * scale, (box.y + inset) * scale),
+                                size = Size(
+                                    (CELL_SIZE - EDGE_STROKE_WIDTH) * scale,
+                                    (CELL_SIZE - EDGE_STROKE_WIDTH) * scale,
+                                ),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f * scale),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                    width = (if (isRecent) 3f else 1.5f) * scale,
+                                ),
+                            )
+                            drawOwnerLabel(
+                                textMeasurer = textMeasurer,
+                                label = owner.label,
+                                cx = cx,
+                                cy = cy,
+                                color = textColor(owner),
+                                scale = scale,
+                            )
+                        }
                     }
 
                     // Undrawn edges (ghost lines)
@@ -256,13 +329,12 @@ fun DotsAndBoxesGame() {
                         )
                     }
 
-                    // Drawn edges
+                    // Drawn edges (animated draw progress)
                     for (edge in EDGE_DEFINITIONS) {
                         val owner = engine.drawnEdges[edge.id] ?: continue
+                        val progress = edgeAnimProgress[edge.id]?.value ?: 0f
                         val isLast = edge.id == engine.lastEdgeId
-                        val sw = if (isLast) EDGE_STROKE_WIDTH + 1.5f else EDGE_STROKE_WIDTH
-
-                        val progress = if (isLast && animatingEdgeId.value == edge.id) lineAnimProgress.value else 1f
+                        val sw = if (isLast && progress < 1f) EDGE_STROKE_WIDTH + 1.5f else EDGE_STROKE_WIDTH
                         val ex = edge.x1 + (edge.x2 - edge.x1) * progress
                         val ey = edge.y1 + (edge.y2 - edge.y1) * progress
 
@@ -275,17 +347,26 @@ fun DotsAndBoxesGame() {
                         )
                     }
 
-                    // Dots
-                    for (dot in DOT_COORDINATES) {
+                    // Dots (with proximity glow)
+                    DOT_COORDINATES.forEachIndexed { i, dot ->
+                        val r = if (i == nearestDotIndex) DOT_RADIUS * dotGlowScale else DOT_RADIUS
+                        val c = Offset(dot.x * scale, dot.y * scale)
+                        if (i == nearestDotIndex) {
+                            drawCircle(
+                                color = lineColor(engine.currentPlayer).copy(alpha = 0.25f),
+                                radius = r * scale * 1.5f,
+                                center = c,
+                            )
+                        }
                         drawCircle(
                             color = DotFill,
-                            radius = DOT_RADIUS * scale,
-                            center = Offset(dot.x * scale, dot.y * scale),
+                            radius = r * scale,
+                            center = c,
                         )
                         drawCircle(
                             color = DotStroke,
-                            radius = DOT_RADIUS * scale,
-                            center = Offset(dot.x * scale, dot.y * scale),
+                            radius = r * scale,
+                            center = c,
                             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f * scale),
                         )
                     }
@@ -330,6 +411,15 @@ private fun ScoreCard(
     activeColor: Color,
     modifier: Modifier = Modifier,
 ) {
+    // Score pop: snap larger then spring back to 1
+    val popScale = remember { Animatable(1f) }
+    val isFirst = remember { mutableStateOf(true) }
+    LaunchedEffect(score) {
+        if (isFirst.value) { isFirst.value = false; return@LaunchedEffect }
+        popScale.snapTo(1.2f)
+        popScale.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium))
+    }
+
     val borderColor = if (isActive) activeColor else MaterialTheme.colorScheme.outlineVariant
     val bgColor = if (isActive) activeColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
     Surface(
@@ -337,7 +427,15 @@ private fun ScoreCard(
         shape = RoundedCornerShape(8.dp),
         modifier = modifier.border(1.dp, borderColor, RoundedCornerShape(8.dp)),
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .drawWithContent {
+                    scale(popScale.value, pivot = center) {
+                        this@drawWithContent.drawContent()
+                    }
+                },
+        ) {
             Text(label, style = MaterialTheme.typography.labelLarge)
             Text(stringResource(R.string.score_label, score.toString()), style = MaterialTheme.typography.bodySmall)
         }

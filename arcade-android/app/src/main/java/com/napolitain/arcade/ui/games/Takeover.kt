@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -51,6 +52,7 @@ import com.napolitain.arcade.ui.components.GameMode
 import com.napolitain.arcade.ui.components.GameModeToggle
 import com.napolitain.arcade.ui.components.GameShell
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 
 // Token colours
@@ -77,6 +79,7 @@ private val LastTargetRing = Color(0xFFFCD34D)
 @Composable
 fun TakeoverGame() {
     val engine = remember { TakeoverEngine() }
+    val scope = rememberCoroutineScope()
 
     // AI move with delay
     LaunchedEffect(engine.board.toList(), engine.isAiTurn) {
@@ -99,7 +102,7 @@ fun TakeoverGame() {
         val targetCol = if (targetIdx >= 0) getCol(targetIdx) else 0
 
         // Animate the move itself (clone grow / jump slide)
-        launch {
+        scope.launch {
             moveAnim.snapTo(0f)
             moveAnim.animateTo(
                 1f,
@@ -116,7 +119,7 @@ fun TakeoverGame() {
         }
         sorted.forEachIndexed { i, idx ->
             conversionProgresses[idx] = 0f
-            launch {
+            scope.launch {
                 delay(i * 60L) // sequential wave timing
                 val anim = Animatable(0f)
                 anim.animateTo(1f, tween(300, easing = FastOutSlowInEasing)) {
@@ -173,7 +176,7 @@ fun TakeoverGame() {
         if (engine.mode == GameMode.AI) {
             GameDifficultyToggle(
                 difficulty = engine.difficulty,
-                onDifficultyChange = { engine.setGameDifficulty(it) },
+                onDifficultyChange = { engine.difficulty = it },
             )
         }
 
@@ -486,6 +489,7 @@ private fun LegendItem(color: Color, label: String) {
         Canvas(modifier = Modifier.padding(top = 4.dp).size(12.dp)) {
             drawCircle(color, size.minDimension / 2f)
         }
+        @Suppress("DEPRECATION")
         Text(label, style = MaterialTheme.typography.bodySmall, color = color)
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +48,7 @@ import com.napolitain.arcade.ui.components.GameMode
 import com.napolitain.arcade.ui.components.GameModeToggle
 import com.napolitain.arcade.ui.components.GameShell
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 // Board colours
@@ -68,6 +70,7 @@ private val LegalDot = Color(0xCCA5F3FC)
 @Composable
 fun ReversiGame() {
     val engine = remember { ReversiEngine() }
+    val scope = rememberCoroutineScope()
 
     // AI move with small delay
     LaunchedEffect(engine.board.toList(), engine.isAiTurn) {
@@ -95,7 +98,7 @@ fun ReversiGame() {
         }
         sorted.forEachIndexed { i, idx ->
             flipProgresses[idx] = 0f
-            launch {
+            scope.launch {
                 delay(i * 50L)
                 val anim = Animatable(0f)
                 anim.animateTo(1f, tween(350, easing = FastOutSlowInEasing)) {
@@ -150,7 +153,7 @@ fun ReversiGame() {
         if (engine.mode == GameMode.AI) {
             GameDifficultyToggle(
                 difficulty = engine.difficulty,
-                onDifficultyChange = { engine.setGameDifficulty(it) },
+                onDifficultyChange = { engine.difficulty = it },
             )
         }
 
@@ -344,6 +347,7 @@ private fun ScoreCard(
         color = bgColor,
         border = BorderStroke(if (isActive) 2.dp else 1.dp, borderColor),
     ) {
+        @Suppress("DEPRECATION")
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

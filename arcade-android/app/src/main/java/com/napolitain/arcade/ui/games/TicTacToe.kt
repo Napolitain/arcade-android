@@ -1,6 +1,9 @@
 package com.napolitain.arcade.ui.games
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -10,8 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -26,6 +31,13 @@ import com.napolitain.arcade.ui.components.GameMode
 import com.napolitain.arcade.ui.components.GameModeToggle
 import com.napolitain.arcade.ui.components.GameShell
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/** Per-cell animation state: draw progress (stroke/arc) + bounce scale. */
+private class CellAnimState {
+    val drawProgress = Animatable(0f)
+    val scale = Animatable(0f)
+}
 
 @Composable
 fun TicTacToeGame() {
@@ -52,12 +64,62 @@ fun TicTacToeGame() {
         engine.triggerAiMove()
     }
 
-    // Winning-line animation
+    // --- Per-cell animations ---
+    val cellAnimations = remember { Array(9) { CellAnimState() } }
+    val previousBoard = remember { arrayOfNulls<Mark>(9) }
+
+    // Watch the board for new moves / resets and fire cell animations
+    LaunchedEffect(Unit) {
+        val scope = this
+        snapshotFlow { engine.board.toList() }
+            .collect { currentBoard ->
+                for (i in 0 until 9) {
+                    if (currentBoard[i] != null && previousBoard[i] == null) {
+                        val anim = cellAnimations[i]
+                        val mark = currentBoard[i]!!
+                        // Bounce scale: 0 → 1 with spring overshoot
+                        scope.launch {
+                            anim.scale.snapTo(0f)
+                            anim.scale.animateTo(
+                                1f,
+                                spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+                            )
+                        }
+                        // Stroke / arc draw progress
+                        scope.launch {
+                            anim.drawProgress.snapTo(0f)
+                            when (mark) {
+                                Mark.X -> {
+                                    // First stroke 0→0.5 over 300ms, 100ms gap, second stroke 0.5→1
+                                    anim.drawProgress.animateTo(0.5f, tween(300))
+                                    delay(100)
+                                    anim.drawProgress.animateTo(1f, tween(300))
+                                }
+                                Mark.O -> {
+                                    // Arc sweep with slight spring overshoot
+                                    anim.drawProgress.animateTo(
+                                        1f,
+                                        spring(dampingRatio = 0.7f),
+                                    )
+                                }
+                            }
+                        }
+                    } else if (currentBoard[i] == null && previousBoard[i] != null) {
+                        // Board was reset — snap animations back to zero
+                        cellAnimations[i].drawProgress.snapTo(0f)
+                        cellAnimations[i].scale.snapTo(0f)
+                    }
+                }
+                currentBoard.forEachIndexed { idx, v -> previousBoard[idx] = v }
+            }
+    }
+
+    // --- Winning-line sweep animation ---
     val winLineProgress = remember { Animatable(0f) }
     LaunchedEffect(engine.winningLine) {
         if (engine.winningLine != null) {
             winLineProgress.snapTo(0f)
-            winLineProgress.animateTo(1f, tween(350))
+            winLineProgress.animateTo(1f, tween(500, easing = EaseInOut))
         } else {
             winLineProgress.snapTo(0f)
         }
@@ -94,28 +156,34 @@ fun TicTacToeGame() {
 
             // Grid lines
             for (i in 1..2) {
-                // vertical
                 drawLine(gridColor, Offset(cellW * i, 0f), Offset(cellW * i, size.height), lineStroke, StrokeCap.Round)
-                // horizontal
                 drawLine(gridColor, Offset(0f, cellH * i), Offset(size.width, cellH * i), lineStroke, StrokeCap.Round)
             }
 
-            // Marks
+            // Marks — animated per cell
             val board = engine.board
             for (idx in 0 until 9) {
                 val mark = board[idx] ?: continue
+                val anim = cellAnimations[idx]
+                val scaleVal = anim.scale.value
+                if (scaleVal == 0f) continue
+                val drawProg = anim.drawProgress.value
+
                 val col = idx % 3
                 val row = idx / 3
                 val cx = cellW * col + cellW / 2f
                 val cy = cellH * row + cellH / 2f
                 val pad = cellW * 0.22f
+                val half = (cellW / 2f - pad) * scaleVal
+                val sw = lineStroke * 1.8f
+
                 when (mark) {
-                    Mark.X -> drawX(cx, cy, cellW / 2f - pad, xColor, lineStroke * 1.8f)
-                    Mark.O -> drawO(cx, cy, cellW / 2f - pad, oColor, lineStroke * 1.8f)
+                    Mark.X -> drawAnimatedX(cx, cy, half, xColor, sw, drawProg)
+                    Mark.O -> drawAnimatedO(cx, cy, half, oColor, sw, drawProg)
                 }
             }
 
-            // Winning line
+            // Winning line sweep
             val wl = engine.winningLine
             if (wl != null && winLineProgress.value > 0f) {
                 val (a, _, c) = wl
@@ -138,11 +206,48 @@ fun TicTacToeGame() {
     }
 }
 
-private fun DrawScope.drawX(cx: Float, cy: Float, half: Float, color: Color, strokeWidth: Float) {
-    drawLine(color, Offset(cx - half, cy - half), Offset(cx + half, cy + half), strokeWidth, StrokeCap.Round)
-    drawLine(color, Offset(cx + half, cy - half), Offset(cx - half, cy + half), strokeWidth, StrokeCap.Round)
+// ── Animated drawing helpers ────────────────────────────────────────────────
+
+/** Draw X stroke-by-stroke: first diagonal at progress 0→0.5, second at 0.5→1. */
+private fun DrawScope.drawAnimatedX(
+    cx: Float, cy: Float, half: Float, color: Color, strokeWidth: Float, progress: Float,
+) {
+    if (progress > 0f) {
+        val p1 = (progress / 0.5f).coerceIn(0f, 1f)
+        val x0 = cx - half; val y0 = cy - half
+        val x1 = cx + half; val y1 = cy + half
+        drawLine(
+            color,
+            Offset(x0, y0),
+            Offset(x0 + (x1 - x0) * p1, y0 + (y1 - y0) * p1),
+            strokeWidth, StrokeCap.Round,
+        )
+    }
+    if (progress > 0.5f) {
+        val p2 = ((progress - 0.5f) / 0.5f).coerceIn(0f, 1f)
+        val x0 = cx + half; val y0 = cy - half
+        val x1 = cx - half; val y1 = cy + half
+        drawLine(
+            color,
+            Offset(x0, y0),
+            Offset(x0 + (x1 - x0) * p2, y0 + (y1 - y0) * p2),
+            strokeWidth, StrokeCap.Round,
+        )
+    }
 }
 
-private fun DrawScope.drawO(cx: Float, cy: Float, radius: Float, color: Color, strokeWidth: Float) {
-    drawCircle(color, radius, Offset(cx, cy), style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
+/** Draw O as an arc whose sweep angle grows from 0° to 360° (with spring overshoot). */
+private fun DrawScope.drawAnimatedO(
+    cx: Float, cy: Float, radius: Float, color: Color, strokeWidth: Float, progress: Float,
+) {
+    if (progress <= 0f) return
+    drawArc(
+        color = color,
+        startAngle = -90f,
+        sweepAngle = progress * 360f,
+        useCenter = false,
+        topLeft = Offset(cx - radius, cy - radius),
+        size = Size(radius * 2f, radius * 2f),
+        style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+    )
 }

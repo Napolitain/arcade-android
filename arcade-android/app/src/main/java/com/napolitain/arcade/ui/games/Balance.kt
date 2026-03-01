@@ -1,6 +1,14 @@
 package com.napolitain.arcade.ui.games
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -34,6 +44,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -56,6 +67,7 @@ import com.napolitain.arcade.ui.components.GameMode
 import com.napolitain.arcade.ui.components.GameModeToggle
 import com.napolitain.arcade.ui.components.GameShell
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -73,9 +85,63 @@ fun BalanceGame() {
 
     val animatedAngle by animateFloatAsState(
         targetValue = engine.beamAngle,
-        animationSpec = tween(durationMillis = 400),
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow),
         label = "beamAngle",
     )
+
+    // Weight drop animations: slot -> Y offset fraction (-1 = off-screen, 0 = landed)
+    val dropOffsets = remember { mutableStateMapOf<Int, Float>() }
+    LaunchedEffect(Unit) {
+        var knownSlots = emptySet<Int>()
+        snapshotFlow { engine.placements.toList() }
+            .collect { currentPlacements ->
+                val currentSlots = currentPlacements.map { it.slot }.toSet()
+                dropOffsets.keys.toList().forEach { if (it !in currentSlots) dropOffsets.remove(it) }
+                val newSlots = currentSlots - knownSlots
+                for (slot in newSlots) {
+                    dropOffsets[slot] = -1f
+                    launch {
+                        val anim = Animatable(-1f)
+                        anim.animateTo(
+                            0f,
+                            spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessLow),
+                        ) { dropOffsets[slot] = value }
+                    }
+                }
+                knownSlots = currentSlots
+            }
+    }
+
+    // Tip-over shake animation
+    val tipExtraAngle = remember { Animatable(0f) }
+    LaunchedEffect(engine.roundResult) {
+        val result = engine.roundResult
+        if (result is RoundResult.Tip) {
+            val dir = if (result.finalTorque > 0) 1f else -1f
+            tipExtraAngle.animateTo(
+                targetValue = dir * 23f,
+                animationSpec = keyframes {
+                    durationMillis = 600
+                    dir * 30f at 80
+                    dir * 10f at 180
+                    dir * 28f at 300
+                    dir * 18f at 420
+                    dir * 23f at 600
+                },
+            )
+        } else {
+            tipExtraAngle.snapTo(0f)
+        }
+    }
+
+    // Red flash on tip
+    val flashAlpha = remember { Animatable(0f) }
+    LaunchedEffect(engine.roundResult) {
+        if (engine.roundResult is RoundResult.Tip) {
+            flashAlpha.snapTo(0.28f)
+            flashAlpha.animateTo(0f, tween(500))
+        }
+    }
 
     // AI auto-play
     LaunchedEffect(engine.isAiTurn, engine.placements) {
@@ -105,7 +171,13 @@ fun BalanceGame() {
         TorqueBar(engine)
 
         // Canvas board
-        BalanceBoard(engine, animatedAngle, textMeasurer)
+        BalanceBoard(
+            engine = engine,
+            beamAngle = animatedAngle + tipExtraAngle.value,
+            textMeasurer = textMeasurer,
+            dropOffsets = dropOffsets,
+            flashAlpha = flashAlpha.value,
+        )
 
         // Controls
         WeightAndSlotControls(engine)
@@ -216,7 +288,13 @@ private fun TorqueBar(engine: BalanceEngine) {
 }
 
 @Composable
-private fun BalanceBoard(engine: BalanceEngine, beamAngle: Float, textMeasurer: TextMeasurer) {
+private fun BalanceBoard(
+    engine: BalanceEngine,
+    beamAngle: Float,
+    textMeasurer: TextMeasurer,
+    dropOffsets: Map<Int, Float>,
+    flashAlpha: Float,
+) {
     val placements = engine.placements
     val roundResult = engine.roundResult
     val isTip = roundResult is RoundResult.Tip
@@ -313,25 +391,50 @@ private fun BalanceBoard(engine: BalanceEngine, beamAngle: Float, textMeasurer: 
                     )
                 }
 
-                // Placed weights
+                // Ghost preview weights at empty slots
+                val selectedWeight = engine.selectedWeight
+                if (selectedWeight > 0 && !engine.isRoundOver && !engine.isAiTurn) {
+                    val (gFill, gStroke, gText) = when (engine.currentPlayer) {
+                        Player.A -> Triple(PlayerAFill, PlayerAStroke, PlayerAText)
+                        Player.B -> Triple(PlayerBFill, PlayerBStroke, PlayerBText)
+                    }
+                    for (slot in SLOT_POSITIONS) {
+                        if (engine.placementBySlot[slot] == null) {
+                            val slotX = cx + slot * slotSpacing
+                            val radius = w * ((14f + selectedWeight * 2f) / 520f)
+                            val ghostCenter = Offset(slotX, h * (176f / 280f))
+                            drawCircle(gFill.copy(alpha = 0.18f), radius, ghostCenter)
+                            drawCircle(gStroke.copy(alpha = 0.22f), radius, ghostCenter, style = Stroke(width = w * (3f / 520f)))
+                            drawWeightText(textMeasurer, selectedWeight.toString(), ghostCenter, gText.copy(alpha = 0.22f), w)
+                        }
+                    }
+                }
+
+                // Placed weights with drop animation
                 for (p in placements) {
                     val slotX = cx + p.slot * slotSpacing
+                    val dropFrac = dropOffsets[p.slot] ?: 0f
+                    val dropYOff = dropFrac * h * 0.35f
                     val (pFill, pStroke, pText) = when (p.player) {
                         Player.A -> Triple(PlayerAFill, PlayerAStroke, PlayerAText)
                         Player.B -> Triple(PlayerBFill, PlayerBStroke, PlayerBText)
                     }
 
-                    // Stalk
-                    drawLine(
-                        color = stalkColor,
-                        start = Offset(slotX, h * (128f / 280f)),
-                        end = Offset(slotX, h * (162f / 280f)),
-                        strokeWidth = w * (2.5f / 520f),
-                    )
+                    // Stalk stretches from beam to weight
+                    val stalkTop = h * (128f / 280f)
+                    val stalkBot = h * (162f / 280f) + dropYOff
+                    if (stalkBot > stalkTop) {
+                        drawLine(
+                            color = stalkColor,
+                            start = Offset(slotX, stalkTop),
+                            end = Offset(slotX, stalkBot),
+                            strokeWidth = w * (2.5f / 520f),
+                        )
+                    }
 
-                    // Weight circle
+                    // Weight circle with drop offset
                     val radius = w * ((14f + p.weight * 2f) / 520f)
-                    val circleCenter = Offset(slotX, h * (176f / 280f))
+                    val circleCenter = Offset(slotX, h * (176f / 280f) + dropYOff)
                     drawCircle(pFill, radius, circleCenter)
                     drawCircle(pStroke, radius, circleCenter, style = Stroke(width = w * (3f / 520f)))
 
@@ -357,6 +460,14 @@ private fun BalanceBoard(engine: BalanceEngine, beamAngle: Float, textMeasurer: 
                         cx - tipLayout.size.width / 2f,
                         h * (64f / 280f) - tipLayout.size.height / 2f,
                     ),
+                )
+            }
+
+            // Red flash overlay on tip
+            if (flashAlpha > 0f) {
+                drawRoundRect(
+                    color = Color.Red.copy(alpha = flashAlpha),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(18f),
                 )
             }
         }
@@ -394,6 +505,18 @@ private fun WeightAndSlotControls(engine: BalanceEngine) {
     val currentWeights = engine.currentPlayerWeights
     val placementMap = engine.placementBySlot
 
+    // Pulsing scale for selected weight
+    val pulseTransition = rememberInfiniteTransition(label = "weightPulse")
+    val pulseScale by pulseTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "pulseScale",
+    )
+
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -418,7 +541,9 @@ private fun WeightAndSlotControls(engine: BalanceEngine) {
                         Button(
                             onClick = { engine.selectWeight(weight) },
                             enabled = !isDisabledBase,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale),
                         ) {
                             Text("$weight")
                         }

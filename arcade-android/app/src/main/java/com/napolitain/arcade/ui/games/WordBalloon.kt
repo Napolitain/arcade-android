@@ -42,6 +42,25 @@ import com.napolitain.arcade.R
 import com.napolitain.arcade.logic.wordballoon.RoundStatus
 import com.napolitain.arcade.logic.wordballoon.WordBalloonEngine
 import com.napolitain.arcade.ui.components.GameShell
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.drawscope.withTransform
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 // ── Colors matching the React SVG ──────────────────────────────
 
@@ -76,31 +95,101 @@ private fun BalloonCanvas(wrongGuesses: Int, modifier: Modifier = Modifier) {
         label = "balloonScale",
     )
 
+    val isPopped = wrongGuesses >= WordBalloonEngine.MAX_WRONG_GUESSES
+
+    // ── 1. Balloon wobble / sway ───────────────────────────────
+    val infiniteTransition = rememberInfiniteTransition(label = "sway")
+    val swayDeg = when {
+        isPopped -> 0f
+        wrongGuesses >= 4 -> 6f
+        wrongGuesses >= 2 -> 4.5f
+        else -> 3f
+    }
+    val swayMs = when {
+        isPopped -> 2000
+        wrongGuesses >= 4 -> 1200
+        wrongGuesses >= 2 -> 1600
+        else -> 2000
+    }
+    val swayAngle by infiniteTransition.animateFloat(
+        initialValue = -swayDeg,
+        targetValue = swayDeg,
+        animationSpec = infiniteRepeatable(
+            animation = tween(swayMs, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "swayAngle",
+    )
+
+    // ── 2. Wrong-guess shake ───────────────────────────────────
+    val shakeOffset = remember { Animatable(0f) }
+    var prevWrong by remember { mutableIntStateOf(wrongGuesses) }
+    LaunchedEffect(wrongGuesses) {
+        val shouldShake = wrongGuesses > prevWrong && !isPopped
+        prevWrong = wrongGuesses
+        if (shouldShake) {
+            shakeOffset.snapTo(0f)
+            shakeOffset.animateTo(
+                targetValue = 0f,
+                animationSpec = keyframes {
+                    durationMillis = 300
+                    (-8f) at 40
+                    8f at 80
+                    (-6f) at 130
+                    6f at 180
+                    (-3f) at 230
+                    3f at 260
+                    0f at 300
+                },
+            )
+        }
+    }
+
+    // ── 3. Stress color ────────────────────────────────────────
+    val stressColor by animateColorAsState(
+        targetValue = when {
+            wrongGuesses >= 5 -> Color(0xFFEF4444)
+            wrongGuesses >= 4 -> BalloonRed
+            wrongGuesses >= 3 -> Color(0xFFE879A0)
+            wrongGuesses >= 2 -> BalloonBlue
+            wrongGuesses >= 1 -> Color(0xFF5BC4D8)
+            else -> BalloonCyan
+        },
+        animationSpec = tween(400),
+        label = "stressColor",
+    )
+
+    // ── 4. Pop explosion ───────────────────────────────────────
+    val popProgress = remember { Animatable(0f) }
+    LaunchedEffect(isPopped) {
+        if (isPopped) {
+            popProgress.snapTo(0f)
+            popProgress.animateTo(1f, tween(600))
+        }
+    }
+
     Canvas(modifier = modifier.fillMaxWidth().height(220.dp)) {
-        // Map SVG viewBox (220×280) into canvas size
         val sx = size.width / 220f
         val sy = size.height / 280f
 
-        val isPopped = wrongGuesses >= WordBalloonEngine.MAX_WRONG_GUESSES
-
         if (!isPopped) {
-            drawBalloon(sx, sy, wrongGuesses, balloonScale)
+            withTransform({
+                translate(left = shakeOffset.value * sx)
+                rotate(swayAngle, pivot = Offset(110f * sx, 86f * sy))
+            }) {
+                drawBalloon(sx, sy, wrongGuesses, balloonScale, stressColor)
+            }
         } else {
-            drawPoppedBalloon(sx, sy)
+            drawPoppedBalloon(sx, sy, popProgress.value)
         }
     }
 }
 
-private fun DrawScope.drawBalloon(sx: Float, sy: Float, wrongGuesses: Int, scale: Float) {
+private fun DrawScope.drawBalloon(sx: Float, sy: Float, wrongGuesses: Int, scale: Float, stressColor: Color) {
     val showRightRope = wrongGuesses < 2
     val showLeftRope = wrongGuesses < 3
     val showBasket = wrongGuesses < 5
     val isBasketDamaged = wrongGuesses >= 4
-    val balloonFill = when {
-        wrongGuesses >= 4 -> BalloonRed
-        wrongGuesses >= 2 -> BalloonBlue
-        else -> BalloonCyan
-    }
 
     // Balloon ellipse (cx=110, cy=86, rx=56, ry=68)
     val bCx = 110f * sx
@@ -108,8 +197,8 @@ private fun DrawScope.drawBalloon(sx: Float, sy: Float, wrongGuesses: Int, scale
     val bRx = 56f * sx * scale
     val bRy = 68f * sy * scale
 
-    // Balloon body
-    drawOval(balloonFill, topLeft = Offset(bCx - bRx, bCy - bRy), size = Size(bRx * 2, bRy * 2))
+    // Balloon body – color animated externally via stressColor
+    drawOval(stressColor, topLeft = Offset(bCx - bRx, bCy - bRy), size = Size(bRx * 2, bRy * 2))
     drawOval(
         Color(0xFFE2E8F0),
         topLeft = Offset(bCx - bRx, bCy - bRy),
@@ -124,11 +213,15 @@ private fun DrawScope.drawBalloon(sx: Float, sy: Float, wrongGuesses: Int, scale
         size = Size(26f * sx, 36f * sy),
     )
 
-    // Cracks (wrongGuesses >= 1)
+    // Progressive cracks – appear one by one as wrong guesses increase
+    val crackStroke = Stroke(width = 3f * sx, cap = StrokeCap.Round)
     if (wrongGuesses >= 1) {
-        val crackStroke = Stroke(width = 3f * sx, cap = StrokeCap.Round)
         drawLine(CrackColor, Offset(123f * sx, 79f * sy), Offset(131f * sx, 89f * sy), strokeWidth = crackStroke.width)
+    }
+    if (wrongGuesses >= 2) {
         drawLine(CrackColor, Offset(123f * sx, 86f * sy), Offset(133f * sx, 94f * sy), strokeWidth = crackStroke.width)
+    }
+    if (wrongGuesses >= 3) {
         drawLine(CrackColor, Offset(115f * sx, 90f * sy), Offset(124f * sx, 99f * sy), strokeWidth = crackStroke.width)
     }
 
@@ -208,24 +301,35 @@ private fun DrawScope.drawBalloon(sx: Float, sy: Float, wrongGuesses: Int, scale
     }
 }
 
-private fun DrawScope.drawPoppedBalloon(sx: Float, sy: Float) {
-    // Center dot
-    drawCircle(BurstCenter, radius = 8f * sx, center = Offset(110f * sx, 90f * sy))
+private fun DrawScope.drawPoppedBalloon(sx: Float, sy: Float, popProgress: Float) {
+    val centerX = 110f * sx
+    val centerY = 90f * sy
 
-    // Burst rays
-    val rayStroke = 6f * sx
-    val rays = listOf(
-        Offset(110f, 38f) to Offset(110f, 58f),
-        Offset(110f, 122f) to Offset(110f, 142f),
-        Offset(58f, 90f) to Offset(78f, 90f),
-        Offset(142f, 90f) to Offset(162f, 90f),
-        Offset(74f, 54f) to Offset(88f, 68f),
-        Offset(132f, 112f) to Offset(146f, 126f),
-        Offset(146f, 54f) to Offset(132f, 68f),
-        Offset(88f, 112f) to Offset(74f, 126f),
+    // Center dot – flash then fade
+    val dotAlpha = if (popProgress < 0.3f) popProgress / 0.3f else (1f - popProgress) / 0.7f
+    drawCircle(
+        BurstCenter.copy(alpha = dotAlpha.coerceIn(0f, 1f)),
+        radius = (8f + 6f * popProgress) * sx,
+        center = Offset(centerX, centerY),
     )
-    for ((start, end) in rays) {
-        drawLine(BurstRay, Offset(start.x * sx, start.y * sy), Offset(end.x * sx, end.y * sy), strokeWidth = rayStroke, cap = StrokeCap.Round)
+
+    // 12 burst rays expanding outward with fading alpha
+    val rayCount = 12
+    val maxLen = 55f * sx
+    val rayLength = maxLen * popProgress
+    val rayAlpha = (1f - popProgress).coerceIn(0f, 1f)
+    val rayStroke = 6f * sx
+    for (i in 0 until rayCount) {
+        val angle = (2.0 * PI * i / rayCount).toFloat()
+        val innerR = 12f * sx * popProgress
+        val outerR = innerR + rayLength
+        drawLine(
+            BurstRay.copy(alpha = rayAlpha),
+            Offset(centerX + cos(angle) * innerR, centerY + sin(angle) * innerR),
+            Offset(centerX + cos(angle) * outerR, centerY + sin(angle) * outerR),
+            strokeWidth = rayStroke,
+            cap = StrokeCap.Round,
+        )
     }
 
     // Dangling ropes (dashed)
@@ -258,8 +362,50 @@ private fun WordDisplay(maskedWord: List<Char>, modifier: Modifier = Modifier) {
     val borderColor = MaterialTheme.colorScheme.outline
     val textColor = MaterialTheme.colorScheme.onSurface
 
+    val wordSize = maskedWord.size
+
+    // ── Flip-reveal animation state ────────────────────────────
+    val flipScales = remember { mutableStateListOf<Animatable<Float, AnimationVector1D>>() }
+    val displayChars = remember { mutableStateListOf<Char>() }
+
+    // Reset when word length changes or a brand-new round starts
+    val needsReset = flipScales.size != wordSize ||
+        (maskedWord.all { it == '\u2022' } && displayChars.any { it != '\u2022' })
+    if (needsReset) {
+        flipScales.clear()
+        repeat(wordSize) { flipScales.add(Animatable(1f)) }
+        displayChars.clear()
+        displayChars.addAll(maskedWord)
+    }
+
+    // Detect newly revealed letters and run staggered flip
+    LaunchedEffect(maskedWord.toList()) {
+        if (flipScales.size != wordSize) return@LaunchedEffect
+        val revealed = (0 until wordSize).filter {
+            it < displayChars.size && displayChars[it] == '\u2022' && maskedWord[it] != '\u2022'
+        }
+        if (revealed.isEmpty()) {
+            // Sync without animation (e.g., game reset)
+            for (i in 0 until wordSize) {
+                if (i < displayChars.size) displayChars[i] = maskedWord[i]
+            }
+            return@LaunchedEffect
+        }
+        revealed.forEachIndexed { stagger, idx ->
+            launch {
+                delay(stagger * 80L)
+                // Scale X → 0 (first half of flip)
+                flipScales[idx].animateTo(0f, tween(150))
+                // Swap to revealed letter at midpoint
+                displayChars[idx] = maskedWord[idx]
+                // Scale X → 1 (second half of flip)
+                flipScales[idx].animateTo(1f, tween(150))
+            }
+        }
+    }
+
     Canvas(modifier = modifier.fillMaxWidth().height(48.dp)) {
-        val letterCount = maskedWord.size
+        val letterCount = wordSize
         val cellW = 36.dp.toPx()
         val cellH = 40.dp.toPx()
         val gap = 6.dp.toPx()
@@ -273,32 +419,43 @@ private fun WordDisplay(maskedWord: List<Char>, modifier: Modifier = Modifier) {
             color = textColor,
         )
 
-        for (i in maskedWord.indices) {
+        for (i in 0 until letterCount) {
             val x = startX + i * (cellW + gap)
-            // Cell background
-            drawRoundRect(
-                surfaceColor,
-                topLeft = Offset(x, startY),
-                size = Size(cellW, cellH),
-                cornerRadius = CornerRadius(6.dp.toPx()),
-            )
-            // Cell border
-            drawRoundRect(
-                borderColor,
-                topLeft = Offset(x, startY),
-                size = Size(cellW, cellH),
-                cornerRadius = CornerRadius(6.dp.toPx()),
-                style = Stroke(width = 1.dp.toPx()),
-            )
-            // Letter
-            val measured = textMeasurer.measure(maskedWord[i].toString(), style)
-            drawText(
-                measured,
-                topLeft = Offset(
-                    x + (cellW - measured.size.width) / 2f,
-                    startY + (cellH - measured.size.height) / 2f,
-                ),
-            )
+            val flipScale = if (i < flipScales.size) flipScales[i].value else 1f
+            val ch = if (i < displayChars.size) displayChars[i] else maskedWord[i]
+
+            withTransform({
+                scale(
+                    scaleX = flipScale,
+                    scaleY = 1f,
+                    pivot = Offset(x + cellW / 2f, startY + cellH / 2f),
+                )
+            }) {
+                // Cell background
+                drawRoundRect(
+                    surfaceColor,
+                    topLeft = Offset(x, startY),
+                    size = Size(cellW, cellH),
+                    cornerRadius = CornerRadius(6.dp.toPx()),
+                )
+                // Cell border
+                drawRoundRect(
+                    borderColor,
+                    topLeft = Offset(x, startY),
+                    size = Size(cellW, cellH),
+                    cornerRadius = CornerRadius(6.dp.toPx()),
+                    style = Stroke(width = 1.dp.toPx()),
+                )
+                // Letter
+                val measured = textMeasurer.measure(ch.toString(), style)
+                drawText(
+                    measured,
+                    topLeft = Offset(
+                        x + (cellW - measured.size.width) / 2f,
+                        startY + (cellH - measured.size.height) / 2f,
+                    ),
+                )
+            }
         }
     }
 }
